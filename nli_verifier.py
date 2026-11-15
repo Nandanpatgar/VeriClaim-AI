@@ -1,3 +1,4 @@
+
 """
 VERI-CLAIM-AI
 NLI Verification Module
@@ -5,13 +6,15 @@ NLI Verification Module
 Model: cross-encoder/nli-deberta-v3-base
 
 Responsibilities:
-1. Load the DeBERTa NLI model.
+1. Load and cache the DeBERTa NLI model.
 2. Compare evidence passages against factual claims.
 3. Classify evidence as entailment, contradiction or neutral.
 4. Preserve evidence text and source metadata.
-5. Return structured verification results.
+5. Support efficient batch inference.
+6. Return structured verification results.
 """
 
+import math
 import torch
 
 from transformers import (
@@ -20,9 +23,9 @@ from transformers import (
 )
 
 
-# ==================================================
+# ============================================================
 # CONFIGURATION
-# ==================================================
+# ============================================================
 
 MODEL_NAME = "cross-encoder/nli-deberta-v3-base"
 
@@ -32,25 +35,34 @@ BATCH_SIZE = 8
 
 TOP_K_EVIDENCE = 5
 
+EPSILON = 1e-10
 
-# ==================================================
+
+# ============================================================
 # MODEL CACHE
-# ==================================================
+# ============================================================
 
 _model = None
-
 _tokenizer = None
-
 _device = None
-
 _label_mapping = None
 
 
-# ==================================================
+# ============================================================
 # LABEL NORMALIZATION
-# ==================================================
+# ============================================================
 
 def normalize_nli_label(label):
+    """
+    Normalize different model label formats.
+
+    Supported labels:
+        entailment
+        contradiction
+        neutral
+
+    Unknown labels are treated as neutral.
+    """
 
     label = str(label).lower().strip()
 
@@ -66,15 +78,34 @@ def normalize_nli_label(label):
     return "neutral"
 
 
+# ============================================================
+# LABEL MAPPING
+# ============================================================
+
 def get_label_mapping(model):
+    """
+    Extract NLI label mapping from model configuration.
+
+    Falls back to the known label order of the configured
+    DeBERTa NLI model when generic LABEL_x names are returned.
+    """
+
+    id2label = getattr(
+        model.config,
+        "id2label",
+        {}
+    )
 
     mapping = {}
 
-    id2label = model.config.id2label
-
     for index, label in id2label.items():
 
-        mapping[int(index)] = normalize_nli_label(label)
+        try:
+            index = int(index)
+        except (ValueError, TypeError):
+            continue
+
+        mapping[index] = normalize_nli_label(label)
 
     expected = {
         "entailment",
@@ -93,11 +124,16 @@ def get_label_mapping(model):
     return mapping
 
 
-# ==================================================
+# ============================================================
 # LOAD MODEL
-# ==================================================
+# ============================================================
 
 def load_model():
+    """
+    Load DeBERTa and tokenizer once.
+
+    Uses GPU when available; otherwise uses CPU.
+    """
 
     global _model
     global _tokenizer
@@ -107,18 +143,15 @@ def load_model():
     if (
         _model is not None
         and _tokenizer is not None
+        and _device is not None
+        and _label_mapping is not None
     ):
 
         return {
-
             "model": _model,
-
             "tokenizer": _tokenizer,
-
             "device": _device,
-
             "label_mapping": _label_mapping
-
         }
 
     print("\nLoading DeBERTa NLI model...")
@@ -141,30 +174,102 @@ def load_model():
 
     _label_mapping = get_label_mapping(_model)
 
-    print(f"DeBERTa loaded successfully on {_device}.")
+    print(
+        f"DeBERTa loaded successfully on {_device}."
+    )
 
     return {
-
         "model": _model,
-
         "tokenizer": _tokenizer,
-
         "device": _device,
-
         "label_mapping": _label_mapping
-
     }
 
 
-# ==================================================
+# ============================================================
+# PROBABILITY NORMALIZATION
+# ============================================================
+
+def normalize_probabilities(probabilities):
+    """
+    Ensure all three NLI classes are present.
+
+    Returns a normalized probability dictionary.
+    """
+
+    labels = [
+        "entailment",
+        "contradiction",
+        "neutral"
+    ]
+
+    normalized = {}
+
+    for label in labels:
+
+        try:
+            value = float(probabilities.get(label, 0.0))
+        except (ValueError, TypeError):
+            value = 0.0
+
+        if not math.isfinite(value):
+            value = 0.0
+
+        normalized[label] = max(0.0, value)
+
+    total = sum(normalized.values())
+
+    if total <= EPSILON:
+
+        return {
+            "entailment": 0.0,
+            "contradiction": 0.0,
+            "neutral": 1.0
+        }
+
+    return {
+        label: value / total
+        for label, value in normalized.items()
+    }
+
+
+# ============================================================
 # RUN BATCH NLI
-# ==================================================
+# ============================================================
 
 def run_nli_batch(
     premises,
     hypotheses,
     bundle=None
 ):
+    """
+    Perform batch NLI inference.
+
+    Premise:
+        Retrieved evidence passage.
+
+    Hypothesis:
+        Factual claim being verified.
+
+    Returns:
+        [
+            {
+                "label": "entailment",
+                "confidence": 0.95,
+                "probabilities": {
+                    "entailment": 0.95,
+                    "contradiction": 0.02,
+                    "neutral": 0.03
+                }
+            }
+        ]
+    """
+
+    if not isinstance(premises, list):
+        raise ValueError("Premises must be a list.")
+
+    if not isinstance(hypotheses, list):
+        raise ValueError("Hypotheses must be a list.")
 
     if len(premises) != len(hypotheses):
 
@@ -173,93 +278,118 @@ def run_nli_batch(
         )
 
     if not premises:
-
         return []
 
-    if bundle is None:
+    for premise, hypothesis in zip(
+        premises,
+        hypotheses
+    ):
 
+        if not isinstance(premise, str) or not premise.strip():
+            raise ValueError("Premises must contain non-empty strings.")
+
+        if not isinstance(hypothesis, str) or not hypothesis.strip():
+            raise ValueError("Hypotheses must contain non-empty strings.")
+
+    if bundle is None:
         bundle = load_model()
 
-    model = bundle["model"]
-
-    tokenizer = bundle["tokenizer"]
-
-    device = bundle["device"]
-
-    label_mapping = bundle["label_mapping"]
-
-    encoded = tokenizer(
-
-        premises,
-
-        hypotheses,
-
-        padding=True,
-
-        truncation=True,
-
-        max_length=MAX_LENGTH,
-
-        return_tensors="pt"
-
-    )
-
-    encoded = {
-        key: value.to(device)
-        for key, value in encoded.items()
+    required_keys = {
+        "model",
+        "tokenizer",
+        "device",
+        "label_mapping"
     }
 
-    with torch.no_grad():
+    if not isinstance(bundle, dict) or not required_keys.issubset(bundle):
+        raise ValueError("Invalid NLI model bundle.")
 
-        outputs = model(**encoded)
+    model = bundle["model"]
+    tokenizer = bundle["tokenizer"]
+    device = bundle["device"]
+    label_mapping = bundle["label_mapping"]
 
-        probabilities = torch.softmax(
-            outputs.logits,
-            dim=-1
-        )
+    if not isinstance(label_mapping, dict):
+        raise ValueError("Invalid NLI label mapping.")
 
     results = []
 
-    for probability_row in probabilities:
+    # Process passages in manageable batches.
+    for start in range(0, len(premises), BATCH_SIZE):
 
-        probabilities_dict = {}
-
-        for index, score in enumerate(probability_row):
-
-            label = label_mapping.get(
-                index,
-                "neutral"
-            )
-
-            probabilities_dict[label] = float(
-                score.item()
-            )
-
-        predicted_label = max(
-            probabilities_dict,
-            key=probabilities_dict.get
-        )
-
-        confidence = probabilities_dict[
-            predicted_label
+        batch_premises = premises[
+            start:start + BATCH_SIZE
         ]
 
-        results.append({
+        batch_hypotheses = hypotheses[
+            start:start + BATCH_SIZE
+        ]
 
-            "label": predicted_label,
+        encoded = tokenizer(
+            batch_premises,
+            batch_hypotheses,
+            padding=True,
+            truncation=True,
+            max_length=MAX_LENGTH,
+            return_tensors="pt"
+        )
 
-            "confidence": confidence,
+        encoded = {
+            key: value.to(device)
+            for key, value in encoded.items()
+        }
 
-            "probabilities": probabilities_dict
+        with torch.no_grad():
 
-        })
+            outputs = model(**encoded)
+
+            probabilities = torch.softmax(
+                outputs.logits,
+                dim=-1
+            )
+
+        for probability_row in probabilities:
+
+            probabilities_dict = {}
+
+            for index, score in enumerate(probability_row):
+
+                label = label_mapping.get(
+                    index,
+                    label_mapping.get(str(index), "neutral")
+                )
+
+                label = normalize_nli_label(label)
+
+                probabilities_dict[label] = float(
+                    score.item()
+                )
+
+            probabilities_dict = normalize_probabilities(
+                probabilities_dict
+            )
+
+            predicted_label = max(
+                probabilities_dict,
+                key=probabilities_dict.get
+            )
+
+            confidence = probabilities_dict[
+                predicted_label
+            ]
+
+            results.append({
+                "label": predicted_label,
+                "confidence": confidence,
+                "probabilities": probabilities_dict
+            })
 
     return results
 
 
-# ==================================================
+# ============================================================
 # VERIFY ONE CLAIM AGAINST EVIDENCE
-# ==================================================
+# ============================================================
 
 def verify_claim_evidence(
     claim,
@@ -267,6 +397,17 @@ def verify_claim_evidence(
     model_bundle=None,
     top_k=TOP_K_EVIDENCE
 ):
+    """
+    Verify one claim against multiple evidence passages.
+
+    Each evidence passage is independently classified as:
+        entailment
+        contradiction
+        neutral
+
+    The function does not determine the final claim verdict.
+    That responsibility belongs to decision_engine.py.
+    """
 
     if not isinstance(claim, str) or not claim.strip():
 
@@ -280,11 +421,17 @@ def verify_claim_evidence(
             "Evidence must be provided as a list."
         )
 
-    if top_k < 1:
+    if (
+        isinstance(top_k, bool)
+        or not isinstance(top_k, int)
+        or top_k < 1
+    ):
 
         raise ValueError(
-            "top_k must be greater than zero."
+            "top_k must be a positive integer."
         )
+
+    claim = claim.strip()
 
     valid_evidence = []
 
@@ -315,7 +462,6 @@ def verify_claim_evidence(
     selected_evidence = valid_evidence[:top_k]
 
     if not selected_evidence:
-
         return []
 
     premises = [
@@ -334,12 +480,47 @@ def verify_claim_evidence(
         model_bundle
     )
 
+    if len(predictions) != len(selected_evidence):
+
+        raise ValueError(
+            "NLI prediction count does not match evidence count."
+        )
+
     verification_results = []
 
     for item, prediction in zip(
         selected_evidence,
         predictions
     ):
+
+        if not isinstance(prediction, dict):
+            raise ValueError("Invalid NLI prediction.")
+
+        label = normalize_nli_label(
+            prediction.get("label", "neutral")
+        )
+
+        probabilities = normalize_probabilities(
+            prediction.get("probabilities", {})
+        )
+
+        try:
+            confidence = float(
+                prediction.get(
+                    "confidence",
+                    probabilities[label]
+                )
+            )
+        except (ValueError, TypeError):
+            confidence = probabilities[label]
+
+        if not math.isfinite(confidence):
+            confidence = probabilities[label]
+
+        confidence = max(
+            0.0,
+            min(1.0, confidence)
+        )
 
         verification_results.append({
 
@@ -358,31 +539,40 @@ def verify_claim_evidence(
                 item.get("score", 0)
             ),
 
-            "nli_label": prediction.get("label"),
+            "nli_label": label,
 
-            "nli_confidence": prediction.get(
-                "confidence",
-                0
-            ),
+            "nli_confidence": confidence,
 
-            "nli_probabilities": prediction.get(
-                "probabilities",
-                {}
-            )
+            "nli_probabilities": probabilities
 
         })
 
     return verification_results
 
 
-# ==================================================
+# ============================================================
 # VERIFY MULTIPLE CLAIMS
-# ==================================================
+# ============================================================
 
 def verify_claims(
     ranked_result,
     model_bundle=None
 ):
+    """
+    Verify all claims in a ranked evidence result.
+
+    Expected input:
+
+    {
+        "claims": [
+            {
+                "claim_id": 1,
+                "claim": "Example claim",
+                "ranked_evidence": [...]
+            }
+        ]
+    }
+    """
 
     if not isinstance(ranked_result, dict):
 
@@ -390,13 +580,16 @@ def verify_claims(
             "Ranked result must be a dictionary."
         )
 
-    claims = ranked_result.get("claims", [])
+    claims = ranked_result.get("claims")
 
     if not isinstance(claims, list):
 
         raise ValueError(
             "Claims must be a list."
         )
+
+    if not claims:
+        return {"claims": []}
 
     verified_claims = []
 
@@ -423,13 +616,9 @@ def verify_claims(
         )
 
         results = verify_claim_evidence(
-
             claim,
-
             ranked_evidence,
-
             model_bundle=model_bundle
-
         )
 
         verified_claims.append({
@@ -454,22 +643,19 @@ def verify_claims(
         )
 
     return {
-
         "claims": verified_claims
-
     }
 
 
-# ==================================================
+# ============================================================
 # TERMINAL TESTING
-# ==================================================
+# ============================================================
 
 def main():
 
     import json
 
     from evidence_retrieval import retrieve_evidence
-
     from evidence_ranker import rank_evidence
 
     print("\n" + "=" * 55)
@@ -488,43 +674,51 @@ def main():
 
         return
 
-    retrieval_result = retrieve_evidence({
+    try:
 
-        "claims": [
+        # Step 1: Retrieve evidence.
+        retrieval_result = retrieve_evidence({
 
-            {
+            "claims": [
 
-                "claim_id": 1,
+                {
+                    "claim_id": 1,
+                    "claim": claim,
+                    "source_text": claim
+                }
 
-                "claim": claim,
+            ]
 
-                "source_text": claim
+        })
 
-            }
-
-        ]
-
-    })
-
-    ranked_result = rank_evidence(
-        retrieval_result
-    )
-
-    verified_result = verify_claims(
-        ranked_result
-    )
-
-    print("\nNLI VERIFICATION RESULTS")
-
-    print(
-        json.dumps(
-            verified_result,
-            indent=4,
-            ensure_ascii=False
+        # Step 2: Rank evidence.
+        ranked_result = rank_evidence(
+            retrieval_result
         )
-    )
 
+        # Step 3: Verify evidence.
+        verified_result = verify_claims(
+            ranked_result
+        )
+
+        print("\nNLI VERIFICATION RESULTS")
+
+        print(
+            json.dumps(
+                verified_result,
+                indent=4,
+                ensure_ascii=False
+            )
+        )
+
+    except (ValueError, RuntimeError) as error:
+
+        print(f"\nVerification failed: {error}")
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
 
 if __name__ == "__main__":
-
     main()

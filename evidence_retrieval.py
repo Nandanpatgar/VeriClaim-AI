@@ -1,183 +1,294 @@
 
 import os
-import json
+import re
+import hashlib
+from urllib.parse import urlparse
+
 import requests
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
-# ==================================================
+# ============================================================
 # CONFIGURATION
-# ==================================================
-
-load_dotenv()
+# ============================================================
 
 WIKIPEDIA_API_URL = "https://en.wikipedia.org/w/api.php"
-
 TAVILY_API_URL = "https://api.tavily.com/search"
 
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+REQUEST_TIMEOUT = 15
+MAX_WIKIPEDIA_RESULTS = 5
+MAX_TAVILY_RESULTS = 5
 
-REQUEST_TIMEOUT = 30
-
-WIKIPEDIA_RESULTS = 3
-
-TAVILY_RESULTS = 3
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
 
-HEADERS = {
-    "User-Agent": "Veri-Claim-AI/1.0 (Evidence Retrieval)"
-}
+# ============================================================
+# CUSTOM EXCEPTION
+# ============================================================
+
+class EvidenceRetrievalError(ValueError):
+    pass
 
 
-# ==================================================
-# WIKIPEDIA EVIDENCE RETRIEVAL
-# ==================================================
+# ============================================================
+# INPUT VALIDATION
+# ============================================================
 
-def retrieve_wikipedia_evidence(
-    claim,
-    max_results=WIKIPEDIA_RESULTS
+def normalize_claim(claim):
+    if not isinstance(claim, str):
+        return ""
+
+    return re.sub(r"\s+", " ", claim).strip()
+
+
+def validate_claim(claim):
+    normalized = normalize_claim(claim)
+
+    if not normalized:
+        raise ValueError("Claim cannot be empty.")
+
+    if len(normalized) < 3:
+        raise ValueError("Claim is too short.")
+
+    return normalized
+
+
+def tokenize(text):
+    if not isinstance(text, str):
+        return []
+
+    return re.findall(r"\b[a-zA-Z0-9]+\b", text.lower())
+
+
+# ============================================================
+# SEARCH QUERY GENERATION
+# ============================================================
+
+def generate_search_queries(claim):
+    claim = validate_claim(claim)
+
+    queries = [claim]
+
+    cleaned = re.sub(
+        r"\b(is|are|was|were|the|a|an)\b",
+        " ",
+        claim,
+        flags=re.IGNORECASE
+    )
+
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    if cleaned and cleaned not in queries:
+        queries.append(cleaned)
+
+    return queries
+
+
+# ============================================================
+# RELEVANCE SCORING
+# ============================================================
+
+def calculate_relevance_score(claim, content):
+    claim_tokens = set(tokenize(claim))
+    content_tokens = set(tokenize(content))
+
+    if not claim_tokens or not content_tokens:
+        return 0.0
+
+    overlap = len(claim_tokens.intersection(content_tokens))
+
+    return round(overlap / len(claim_tokens), 4)
+
+
+# ============================================================
+# URL UTILITIES
+# ============================================================
+
+def normalize_url(url):
+    if not isinstance(url, str):
+        return ""
+
+    url = url.strip()
+
+    if not url:
+        return ""
+
+    parsed = urlparse(url)
+
+    if not parsed.scheme or not parsed.netloc:
+        return url.rstrip("/").lower()
+
+    return (
+        f"{parsed.scheme.lower()}://"
+        f"{parsed.netloc.lower()}"
+        f"{parsed.path.rstrip('/')}"
+    )
+
+
+def get_domain(url):
+    if not isinstance(url, str):
+        return ""
+
+    try:
+        return urlparse(url).netloc.lower().replace("www.", "")
+    except Exception:
+        return ""
+
+
+def source_priority(source):
+    priorities = {
+        "Wikipedia": 1,
+        "Tavily": 2
+    }
+
+    return priorities.get(source, 99)
+
+
+# ============================================================
+# EVIDENCE IDENTIFICATION
+# ============================================================
+
+def make_evidence_id(content, url=""):
+    raw = f"{content}|{url}"
+
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def create_evidence(
+    source,
+    title,
+    content,
+    url,
+    score=None,
+    retrieval_provider=None
 ):
-    """
-    Search Wikipedia and retrieve relevant article extracts.
-    """
+    content = content.strip() if isinstance(content, str) else ""
+    title = title.strip() if isinstance(title, str) else ""
+    url = url.strip() if isinstance(url, str) else ""
 
-    evidence = []
+    return {
+        "evidence_id": make_evidence_id(content, url),
+        "source": source,
+        "title": title,
+        "content": content,
+        "url": url,
+        "score": score,
+        "retrieval_provider": retrieval_provider or source
+    }
+
+
+# ============================================================
+# WIKIPEDIA RETRIEVAL
+# ============================================================
+
+def retrieve_wikipedia_evidence(claim):
+    claim = validate_claim(claim)
 
     params = {
         "action": "query",
         "generator": "search",
         "gsrsearch": claim,
-        "gsrnamespace": 0,
-        "gsrlimit": max_results,
+        "gsrlimit": MAX_WIKIPEDIA_RESULTS,
         "prop": "extracts|info",
-        "exintro": 1,
-        "explaintext": 1,
-        "exchars": 1200,
+        "exintro": True,
+        "explaintext": True,
         "inprop": "url",
-        "format": "json",
-        "formatversion": 2
+        "format": "json"
     }
 
     try:
-
         response = requests.get(
             WIKIPEDIA_API_URL,
             params=params,
-            headers=HEADERS,
-            timeout=REQUEST_TIMEOUT
+            timeout=REQUEST_TIMEOUT,
+            headers={
+                "User-Agent": "Veri-Claim-AI/1.0"
+            }
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-        pages = data.get("query", {}).get("pages", [])
+        pages = data.get("query", {}).get("pages", {})
 
-        for page in pages:
+        page_values = (
+            pages if isinstance(pages, list)
+            else pages.values()
+        )
 
+        evidence = []
+
+        for page in page_values:
             title = page.get("title", "")
-
             content = page.get("extract", "")
-
             url = page.get("fullurl", "")
 
-            if not content.strip():
+            if not content:
                 continue
 
-            evidence.append({
-
-                "source": "Wikipedia",
-
-                "title": title,
-
-                "content": content.strip(),
-
-                "url": url,
-
-                "score": None
-
-            })
-
-    except requests.exceptions.Timeout:
-
-        print("Wikipedia request timed out.")
-
-    except requests.exceptions.RequestException as error:
-
-        print(f"Wikipedia API error: {error}")
-
-    except (ValueError, TypeError) as error:
-
-        print(f"Wikipedia response error: {error}")
-
-    return evidence
-
-
-# ==================================================
-# TAVILY WEB SEARCH
-# ==================================================
-
-def retrieve_tavily_evidence(
-    claim,
-    api_key=None,
-    max_results=TAVILY_RESULTS
-):
-    """
-    Search the web using Tavily API.
-
-    If api_key is None, use the key from .env.
-    If api_key is an empty string, skip Tavily.
-    """
-
-    evidence = []
-
-    # IMPORTANT:
-    # Only use the environment key when no key argument
-    # was explicitly provided.
-    if api_key is None:
-        api_key = TAVILY_API_KEY
-
-    # Skip Tavily when the API key is missing.
-    if not api_key or not api_key.strip():
-
-        print(
-            "WARNING: TAVILY_API_KEY is missing. "
-            "Skipping Tavily search."
-        )
+            evidence.append(
+                create_evidence(
+                    source="Wikipedia",
+                    title=title,
+                    content=content,
+                    url=url,
+                    score=None,
+                    retrieval_provider="Wikipedia"
+                )
+            )
 
         return evidence
 
-    headers = {
+    except requests.RequestException:
+        return []
 
-        "Authorization": f"Bearer {api_key}",
+    except (ValueError, TypeError, AttributeError):
+        return []
 
-        "Content-Type": "application/json"
 
-    }
+def retrieve_wikipedia(claim):
+    return retrieve_wikipedia_evidence(claim)
+
+
+# ============================================================
+# TAVILY RETRIEVAL
+# ============================================================
+
+def retrieve_tavily_evidence(claim, api_key=None):
+    claim = validate_claim(claim)
+
+    key = api_key if api_key is not None else TAVILY_API_KEY
+
+    if not key:
+        return []
 
     payload = {
-
         "query": claim,
-
-        "search_depth": "basic",
-
-        "max_results": max_results,
-
+        "search_depth": "advanced",
+        "topic": "general",
+        "max_results": MAX_TAVILY_RESULTS,
         "include_answer": False,
+        "include_raw_content": False
+    }
 
-        "include_raw_content": False,
-
-        "include_images": False
-
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {key}"
     }
 
     try:
-
         response = requests.post(
             TAVILY_API_URL,
-            headers=headers,
             json=payload,
+            headers=headers,
             timeout=REQUEST_TIMEOUT
         )
 
@@ -185,263 +296,191 @@ def retrieve_tavily_evidence(
 
         data = response.json()
 
-        results = data.get("results", [])
+        evidence = []
 
-        for item in results:
+        for result in data.get("results", []):
+            title = result.get("title", "")
+            content = result.get("content", "")
+            url = result.get("url", "")
 
-            title = item.get("title", "")
-
-            content = item.get("content", "")
-
-            url = item.get("url", "")
-
-            score = item.get("score")
-
-            if not isinstance(content, str) or not content.strip():
+            if not content:
                 continue
 
-            evidence.append({
+            provider_score = result.get("score")
 
-                "source": "Tavily",
+            try:
+                if provider_score is not None:
+                    provider_score = float(provider_score)
+            except (ValueError, TypeError):
+                provider_score = None
 
-                "title": title,
+            evidence.append(
+                create_evidence(
+                    source="Tavily",
+                    title=title,
+                    content=content,
+                    url=url,
+                    score=provider_score,
+                    retrieval_provider="Tavily"
+                )
+            )
 
-                "content": content.strip(),
+        return evidence
 
-                "url": url,
+    except requests.RequestException:
+        return []
 
-                "score": score
-
-            })
-
-    except requests.exceptions.Timeout:
-
-        print("Tavily request timed out.")
-
-    except requests.exceptions.RequestException as error:
-
-        print(f"Tavily API error: {error}")
-
-    except (ValueError, TypeError) as error:
-
-        print(f"Tavily response error: {error}")
-
-    return evidence
+    except (ValueError, TypeError, AttributeError):
+        return []
 
 
-# ==================================================
-# DUPLICATE EVIDENCE REMOVAL
-# ==================================================
+def retrieve_tavily(claim, api_key=None):
+    return retrieve_tavily_evidence(
+        claim,
+        api_key=api_key
+    )
+
+
+# ============================================================
+# DUPLICATE REMOVAL
+# ============================================================
 
 def remove_duplicate_evidence(evidence):
-    """
-    Remove duplicate evidence based on source URL.
-    """
+    if not isinstance(evidence, list):
+        return []
 
     unique_evidence = []
-
     seen_urls = set()
+    seen_content = set()
 
     for item in evidence:
+        if not isinstance(item, dict):
+            continue
 
-        url = item.get("url", "").strip()
+        url = normalize_url(item.get("url", ""))
+
+        content = re.sub(
+            r"\s+",
+            " ",
+            str(item.get("content", "")).lower()
+        ).strip()
 
         if url and url in seen_urls:
             continue
 
+        if content and content in seen_content:
+            continue
+
         if url:
             seen_urls.add(url)
+
+        if content:
+            seen_content.add(content)
 
         unique_evidence.append(item)
 
     return unique_evidence
 
 
-# ==================================================
-# COMBINED EVIDENCE RETRIEVAL
-# ==================================================
+def deduplicate_evidence(evidence):
+    return remove_duplicate_evidence(evidence)
 
-def retrieve_evidence(claims):
-    """
-    Retrieve evidence from Wikipedia and Tavily
-    for every extracted claim.
 
-    Accepts:
-    1. A list of claims.
-    2. The complete claim extractor output dictionary.
-    """
+# ============================================================
+# SINGLE CLAIM RETRIEVAL
+# ============================================================
 
-    if isinstance(claims, dict):
+def retrieve_evidence_for_claim(claim, api_key=None):
+    claim = validate_claim(claim)
 
-        claims = claims.get("claims", [])
+    wikipedia_evidence = retrieve_wikipedia_evidence(claim)
 
-    if not isinstance(claims, list):
-
-        raise ValueError(
-            "Input must be a list of claims or a claims dictionary."
+    # Maintain compatibility with one-argument test mocks
+    # and existing callers when no explicit API key is supplied.
+    if api_key is None:
+        tavily_evidence = retrieve_tavily_evidence(claim)
+    else:
+        tavily_evidence = retrieve_tavily_evidence(
+            claim,
+            api_key=api_key
         )
 
-    results = []
-
-    print("\nStarting Evidence Retrieval...")
-
-    print("=" * 55)
-
-    for claim_item in claims:
-
-        if not isinstance(claim_item, dict):
-            continue
-
-        claim_id = claim_item.get("claim_id")
-
-        claim_text = claim_item.get("claim")
-
-        source_text = claim_item.get("source_text", "")
-
-        if not isinstance(claim_text, str) or not claim_text.strip():
-            continue
-
-        print(
-            f"\nProcessing Claim {claim_id}: {claim_text}"
-        )
-
-        # ------------------------------------------
-        # WIKIPEDIA SEARCH
-        # ------------------------------------------
-
-        print("Searching Wikipedia...")
-
-        wikipedia_results = retrieve_wikipedia_evidence(
-            claim_text
-        )
-
-        # ------------------------------------------
-        # TAVILY SEARCH
-        # ------------------------------------------
-
-        print("Searching Tavily...")
-
-        tavily_results = retrieve_tavily_evidence(
-            claim_text
-        )
-
-        # ------------------------------------------
-        # COMBINE EVIDENCE
-        # ------------------------------------------
-
-        combined_evidence = (
-            wikipedia_results + tavily_results
-        )
-
-        # ------------------------------------------
-        # REMOVE DUPLICATES
-        # ------------------------------------------
-
-        combined_evidence = remove_duplicate_evidence(
-            combined_evidence
-        )
-
-        # ------------------------------------------
-        # ASSIGN EVIDENCE IDs
-        # ------------------------------------------
-
-        for index, item in enumerate(
-            combined_evidence,
-            start=1
-        ):
-
-            item["evidence_id"] = index
-
-        # ------------------------------------------
-        # STORE CLAIM RESULTS
-        # ------------------------------------------
-
-        results.append({
-
-            "claim_id": claim_id,
-
-            "claim": claim_text,
-
-            "source_text": source_text,
-
-            "evidence": combined_evidence,
-
-            "total_evidence": len(combined_evidence)
-
-        })
-
-        print(
-            f"Evidence collected: {len(combined_evidence)}"
-        )
-
-    print("\nEvidence Retrieval Completed.")
-
-    return {
-        "claims": results
-    }
-
-
-# ==================================================
-# TERMINAL INTERFACE
-# ==================================================
-
-def main():
-
-    print("\n" + "=" * 55)
-
-    print("              VERI-CLAIM-AI")
-
-    print("             EVIDENCE RETRIEVAL")
-
-    print("=" * 55)
-
-    print("\nEnter a factual claim for testing.")
-
-    claim = input("\nEnter Claim: ").strip()
-
-    if not claim:
-
-        print("\nNo claim provided.")
-
-        return
-
-    test_claims = {
-
-        "claims": [
-
-            {
-                "claim_id": 1,
-
-                "claim": claim,
-
-                "source_text": claim
-
-            }
-
-        ]
-
-    }
-
-    result = retrieve_evidence(test_claims)
-
-    print("\n" + "=" * 55)
-
-    print("             RETRIEVAL RESULTS")
-
-    print("=" * 55)
-
-    print(
-        json.dumps(
-            result,
-            indent=4,
-            ensure_ascii=False
-        )
+    combined_evidence = (
+        wikipedia_evidence + tavily_evidence
     )
 
+    unique_evidence = remove_duplicate_evidence(
+        combined_evidence
+    )
 
-# ==================================================
-# APPLICATION ENTRY POINT
-# ==================================================
+    for index, item in enumerate(unique_evidence, start=1):
+        item["evidence_id"] = index
 
-if __name__ == "__main__":
-    main()
+        item["relevance_score"] = calculate_relevance_score(
+            claim,
+            item.get("content", "")
+        )
+
+    return unique_evidence
+
+
+# ============================================================
+# MAIN RETRIEVAL FUNCTION
+# ============================================================
+
+def retrieve_evidence(data, api_key=None):
+
+    # Public input must be a dictionary.
+    if not isinstance(data, dict):
+        raise ValueError(
+            "Invalid input. Expected a dictionary containing 'claims'."
+        )
+
+    if "claims" not in data:
+        raise ValueError(
+            "Input dictionary must contain a 'claims' field."
+        )
+
+    claims = data["claims"]
+
+    if not isinstance(claims, list):
+        raise ValueError("'claims' must be a list.")
+
+    if not claims:
+        return {"claims": []}
+
+    processed_claims = []
+
+    for claim_data in claims:
+
+        if not isinstance(claim_data, dict):
+            raise ValueError(
+                "Each claim must be represented as a dictionary."
+            )
+
+        claim_text = validate_claim(
+            claim_data.get("claim")
+        )
+
+        evidence = retrieve_evidence_for_claim(
+            claim_text,
+            api_key=api_key
+        )
+
+        processed_claim = {
+            **claim_data,
+            "claim": claim_text,
+            "evidence": evidence,
+            "total_evidence": len(evidence)
+        }
+
+        processed_claims.append(processed_claim)
+
+    return {
+        "claims": processed_claims
+    }
+
+
+# ============================================================
+# END OF MODULE
+# ============================================================
