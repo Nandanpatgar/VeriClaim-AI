@@ -1,3 +1,4 @@
+
 """
 VERI-CLAIM-AI
 Evidence-Based Decision Engine
@@ -6,14 +7,26 @@ Classifications:
 1. SUPPORTED
 2. CONTRADICTED
 3. UNVERIFIABLE
+
+Integrates:
+- NLI verification
+- Semantic similarity
+- Source reliability
+- Independent domain verification
 """
 
+import math
 from urllib.parse import urlparse
 
+from source_reliability import (
+    evaluate_single_source,
+    get_source_domain as reliability_get_source_domain
+)
 
-# ==================================================
+
+# ============================================================
 # CONFIGURATION
-# ==================================================
+# ============================================================
 
 MIN_SUPPORT_CONFIDENCE = 0.80
 
@@ -21,74 +34,140 @@ MIN_CONTRADICTION_CONFIDENCE = 0.90
 
 MIN_SIMILARITY_SCORE = 0.40
 
-MIN_SUPPORTING_EVIDENCE = 2
+MIN_SOURCE_RELIABILITY = 0.50
 
-MIN_CONTRADICTING_EVIDENCE = 2
+# Minimum evidence requirements
+MIN_SUPPORTING_EVIDENCE = 1
 
-MIN_INDEPENDENT_SOURCES = 2
+MIN_CONTRADICTING_EVIDENCE = 1
 
-
-# ==================================================
+# At least one independent source is required
+MIN_INDEPENDENT_SOURCES = 1
+# ============================================================
 # SOURCE DOMAIN EXTRACTION
-# ==================================================
+# ============================================================
 
 def get_source_domain(evidence):
+    """
+    Extract normalized domain from evidence or URL.
+
+    Example:
+        https://www.wikipedia.org/wiki/example
+        -> wikipedia.org
+    """
 
     if isinstance(evidence, dict):
-
         url = evidence.get("url", "")
-
     else:
-
         url = evidence
 
     if not isinstance(url, str) or not url.strip():
-
         return None
 
     try:
+        parsed = urlparse(url.strip())
 
-        parsed = urlparse(url)
+        domain = parsed.hostname
 
-        domain = parsed.netloc.lower()
+        if not domain:
+            return None
+
+        domain = domain.lower().rstrip(".")
 
         if domain.startswith("www."):
-
             domain = domain[4:]
 
         return domain or None
 
-    except Exception:
-
+    except (ValueError, AttributeError):
         return None
 
 
-# ==================================================
-# EVIDENCE VALIDATION
-# ==================================================
+# ============================================================
+# EVIDENCE RELIABILITY ENRICHMENT
+# ============================================================
 
-def validate_evidence(evidence):
+def enrich_evidence_reliability(evidence):
+    """
+    Add source reliability information to evidence.
+
+    Preserves existing evidence fields.
+    """
 
     if not isinstance(evidence, dict):
+        return None
 
+    enriched = evidence.copy()
+
+    try:
+        reliability_data = evaluate_single_source(enriched)
+
+        enriched.update({
+
+            "domain": reliability_data.get("domain", ""),
+
+            "source_type": reliability_data.get(
+                "source_type",
+                "unknown"
+            ),
+
+            "reliability_score": reliability_data.get(
+                "reliability_score",
+                0.0
+            ),
+
+            "is_trusted": reliability_data.get(
+                "is_trusted",
+                False
+            ),
+
+            "uses_https": reliability_data.get(
+                "uses_https",
+                False
+            )
+
+        })
+
+    except (ValueError, TypeError):
+        enriched.update({
+
+            "domain": get_source_domain(enriched) or "",
+
+            "source_type": "unknown",
+
+            "reliability_score": 0.0,
+
+            "is_trusted": False,
+
+            "uses_https": False
+
+        })
+
+    return enriched
+
+
+# ============================================================
+# EVIDENCE VALIDATION
+# ============================================================
+
+def validate_evidence(evidence):
+    """
+    Validate NLI prediction and semantic similarity.
+    """
+
+    if not isinstance(evidence, dict):
         return False
 
     label = evidence.get("nli_label")
 
     if label not in {
-
         "entailment",
-
         "contradiction",
-
         "neutral"
-
     }:
-
         return False
 
     try:
-
         confidence = float(
             evidence.get("nli_confidence")
         )
@@ -98,32 +177,45 @@ def validate_evidence(evidence):
         )
 
     except (TypeError, ValueError):
+        return False
 
+    if not math.isfinite(confidence):
+        return False
+
+    if not math.isfinite(similarity):
         return False
 
     if not 0 <= confidence <= 1:
-
         return False
 
     if not 0 <= similarity <= 1:
-
         return False
 
     return True
 
 
-# ==================================================
+# ============================================================
 # FILTER STRONG EVIDENCE
-# ==================================================
+# ============================================================
 
 def filter_strong_evidence(evidence):
+    """
+    Select evidence satisfying:
+
+    1. Valid NLI classification.
+    2. Minimum NLI confidence.
+    3. Minimum semantic similarity.
+    4. Minimum source reliability.
+    """
+
+    if not isinstance(evidence, list):
+        raise ValueError("Evidence must be a list.")
 
     strong_evidence = []
 
     for item in evidence:
 
         if not validate_evidence(item):
-
             continue
 
         label = item["nli_label"]
@@ -136,41 +228,59 @@ def filter_strong_evidence(evidence):
             item["similarity_score"]
         )
 
+        # Semantic relevance filter.
         if similarity < MIN_SIMILARITY_SCORE:
-
             continue
 
+        # NLI confidence filter.
         if (
             label == "entailment"
             and confidence < MIN_SUPPORT_CONFIDENCE
         ):
-
             continue
 
         if (
             label == "contradiction"
             and confidence < MIN_CONTRADICTION_CONFIDENCE
         ):
-
             continue
 
         if (
             label == "neutral"
             and confidence < MIN_SUPPORT_CONFIDENCE
         ):
-
             continue
 
-        strong_evidence.append(item)
+        # Source reliability evaluation.
+        enriched = enrich_evidence_reliability(item)
+
+        if enriched is None:
+            continue
+
+        reliability = enriched.get(
+            "reliability_score",
+            0.0
+        )
+
+        if reliability < MIN_SOURCE_RELIABILITY:
+            continue
+
+        strong_evidence.append(enriched)
 
     return strong_evidence
 
 
-# ==================================================
+# ============================================================
 # COUNT INDEPENDENT SOURCES
-# ==================================================
+# ============================================================
 
 def count_independent_sources(evidence):
+    """
+    Count unique source domains.
+
+    Multiple articles from the same domain count as
+    one independent source.
+    """
 
     domains = set()
 
@@ -179,29 +289,75 @@ def count_independent_sources(evidence):
         domain = get_source_domain(item)
 
         if domain:
-
             domains.add(domain)
 
     return len(domains)
 
 
-# ==================================================
+# ============================================================
 # DECISION CONFIDENCE
-# ==================================================
+# ============================================================
 
 def calculate_decision_confidence(evidence):
+    """
+    Calculate confidence using both NLI confidence
+    and source reliability.
+
+    Per-evidence confidence:
+
+        NLI confidence * source reliability
+
+    Final confidence:
+        Mean adjusted confidence across selected evidence.
+
+    This is a heuristic decision score, not a calibrated
+    probability that the claim is true.
+    """
 
     if not evidence:
-
         return 0.0
 
-    scores = [
+    scores = []
 
-        float(item["nli_confidence"])
+    for item in evidence:
 
-        for item in evidence
+        try:
+            nli_confidence = float(
+                item["nli_confidence"]
+            )
 
-    ]
+            reliability = item.get(
+                "reliability_score"
+            )
+
+            if reliability is None:
+                enriched = enrich_evidence_reliability(item)
+
+                reliability = (
+                    enriched.get("reliability_score", 0.0)
+                    if enriched
+                    else 0.0
+                )
+
+            reliability = float(reliability)
+
+            if not math.isfinite(nli_confidence):
+                continue
+
+            if not math.isfinite(reliability):
+                continue
+
+            adjusted_score = (
+                nli_confidence * reliability
+            )
+
+            scores.append(adjusted_score)
+
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    if not scores:
+        return 0.0
 
     return round(
         sum(scores) / len(scores),
@@ -209,47 +365,71 @@ def calculate_decision_confidence(evidence):
     )
 
 
-# ==================================================
+# ============================================================
 # PREPARE EVIDENCE DETAILS
-# ==================================================
+# ============================================================
 
 def prepare_evidence_details(evidence):
+    """
+    Organize evidence by NLI classification.
+
+    Includes source reliability metadata.
+    """
 
     details = {
-
         "supporting": [],
-
         "contradicting": [],
-
         "neutral": []
-
     }
 
     for item in evidence:
 
+        if not isinstance(item, dict):
+            continue
+
         label = item.get("nli_label")
+
+        enriched = enrich_evidence_reliability(item)
+
+        if enriched is None:
+            continue
 
         information = {
 
-            "evidence_id": item.get("evidence_id"),
+            "evidence_id": enriched.get("evidence_id"),
 
-            "source": item.get("source"),
+            "source": enriched.get("source"),
 
-            "title": item.get("title"),
+            "title": enriched.get("title"),
 
-            "url": item.get("url"),
+            "url": enriched.get("url"),
 
-            "evidence_text": item.get(
-                "evidence_text",
-                item.get("content", "")
+            "domain": enriched.get("domain"),
+
+            "source_type": enriched.get("source_type"),
+
+            "reliability_score": enriched.get(
+                "reliability_score"
             ),
 
-            "similarity_score": item.get(
+            "is_trusted": enriched.get("is_trusted"),
+
+            "evidence_text": enriched.get(
+                "evidence_text",
+                enriched.get("content", "")
+            ),
+
+            "similarity_score": enriched.get(
                 "similarity_score"
             ),
 
-            "nli_confidence": item.get(
+            "nli_confidence": enriched.get(
                 "nli_confidence"
+            ),
+
+            "nli_probabilities": enriched.get(
+                "nli_probabilities",
+                {}
             )
 
         }
@@ -275,9 +455,9 @@ def prepare_evidence_details(evidence):
     return details
 
 
-# ==================================================
+# ============================================================
 # DECISION EXPLANATION
-# ==================================================
+# ============================================================
 
 def generate_decision_explanation(decision):
 
@@ -285,18 +465,20 @@ def generate_decision_explanation(decision):
 
         "SUPPORTED": (
             "Multiple independent sources provide "
-            "strong evidence supporting the claim."
+            "strong, sufficiently reliable evidence "
+            "supporting the claim."
         ),
 
         "CONTRADICTED": (
             "Multiple independent sources provide "
-            "strong evidence contradicting the claim."
+            "strong, sufficiently reliable evidence "
+            "contradicting the claim."
         ),
 
         "UNVERIFIABLE": (
-            "Available evidence is insufficient, "
-            "conflicting, or lacks adequate independent "
-            "source support."
+            "Available evidence is insufficient, conflicting, "
+            "or lacks adequate relevance, reliability, "
+            "or independent source support."
         )
 
     }
@@ -307,9 +489,9 @@ def generate_decision_explanation(decision):
     )
 
 
-# ==================================================
+# ============================================================
 # DECIDE ONE CLAIM
-# ==================================================
+# ============================================================
 
 def decide_claim(claim_data):
 
@@ -333,9 +515,9 @@ def decide_claim(claim_data):
     )
 
     if not isinstance(evidence, list):
-
         evidence = []
 
+    # Evaluate and filter evidence.
     strong_evidence = filter_strong_evidence(
         evidence
     )
@@ -372,15 +554,14 @@ def decide_claim(claim_data):
         contradicting
     )
 
-    # Default decision
+    # Default decision.
     decision = "UNVERIFIABLE"
 
-    # Evidence used for confidence calculation
     selected_evidence = []
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # CONFLICTING EVIDENCE
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     if supporting and contradicting:
 
@@ -388,9 +569,9 @@ def decide_claim(claim_data):
 
         selected_evidence = strong_evidence
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # SUPPORTED
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     elif (
 
@@ -404,9 +585,9 @@ def decide_claim(claim_data):
 
         selected_evidence = supporting
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # CONTRADICTED
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     elif (
 
@@ -420,9 +601,9 @@ def decide_claim(claim_data):
 
         selected_evidence = contradicting
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # INSUFFICIENT EVIDENCE
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     else:
 
@@ -430,17 +611,17 @@ def decide_claim(claim_data):
 
         selected_evidence = strong_evidence
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # CONFIDENCE
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     evidence_confidence = calculate_decision_confidence(
         selected_evidence
     )
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
     # EVIDENCE IDS
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     supporting_ids = [
 
@@ -458,9 +639,27 @@ def decide_claim(claim_data):
 
     ]
 
-    # ----------------------------------------------
+    # --------------------------------------------------------
+    # SOURCE RELIABILITY SUMMARY
+    # --------------------------------------------------------
+
+    trusted_sources = sum(
+
+        1
+
+        for item in strong_evidence
+
+        if item.get("is_trusted", False)
+
+    )
+
+    unique_domains = count_independent_sources(
+        strong_evidence
+    )
+
+    # --------------------------------------------------------
     # FINAL RESULT
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     return {
 
@@ -502,6 +701,14 @@ def decide_claim(claim_data):
 
             "independent_contradicting_sources": (
                 contradiction_sources
+            ),
+
+            "trusted_sources": trusted_sources,
+
+            "unique_domains": unique_domains,
+
+            "filtered_evidence_count": (
+                len(evidence) - len(strong_evidence)
             )
 
         },
@@ -517,9 +724,9 @@ def decide_claim(claim_data):
     }
 
 
-# ==================================================
+# ============================================================
 # DECIDE MULTIPLE CLAIMS
-# ==================================================
+# ============================================================
 
 def decide_claims(verification_result):
 
@@ -545,7 +752,6 @@ def decide_claims(verification_result):
     for claim_data in claims:
 
         if not isinstance(claim_data, dict):
-
             continue
 
         try:
@@ -597,9 +803,9 @@ def decide_claims(verification_result):
     }
 
 
-# ==================================================
+# ============================================================
 # TERMINAL TESTING
-# ==================================================
+# ============================================================
 
 def main():
 
@@ -680,6 +886,9 @@ def main():
     )
 
 
-if __name__ == "__main__":
+# ============================================================
+# ENTRY POINT
+# ============================================================
 
+if __name__ == "__main__":
     main()

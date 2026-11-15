@@ -1,3 +1,4 @@
+
 import pytest
 
 from decision_engine import (
@@ -7,6 +8,10 @@ from decision_engine import (
     get_source_domain
 )
 
+
+# ============================================================
+# TEST DATA HELPERS
+# ============================================================
 
 def make_evidence(
     evidence_id,
@@ -50,6 +55,10 @@ def make_claim(evidence):
     }
 
 
+# ============================================================
+# TEST 1: SUPPORTED CLAIM
+# ============================================================
+
 def test_supported_claim():
 
     evidence = [
@@ -64,6 +73,10 @@ def test_supported_claim():
 
     assert result["decision"] == "SUPPORTED"
 
+
+# ============================================================
+# TEST 2: CONTRADICTED CLAIM
+# ============================================================
 
 def test_contradicted_claim():
 
@@ -90,18 +103,36 @@ def test_contradicted_claim():
     assert result["decision"] == "CONTRADICTED"
 
 
-def test_unverifiable_claim():
+# ============================================================
+# TEST 3: SINGLE-SOURCE CLAIM
+# ============================================================
+
+def test_single_source_claim_supported():
 
     evidence = [
 
-        make_evidence(1, "source1.com", "entailment")
+        make_evidence(
+            1,
+            "source1.com",
+            "entailment"
+        )
 
     ]
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "UNVERIFIABLE"
+    assert result["decision"] == "SUPPORTED"
 
+    assert (
+        result["evidence_summary"][
+            "independent_supporting_sources"
+        ] == 1
+    )
+
+
+# ============================================================
+# TEST 4: CONFLICTING EVIDENCE
+# ============================================================
 
 def test_conflicting_evidence():
 
@@ -122,6 +153,10 @@ def test_conflicting_evidence():
 
     assert result["decision"] == "UNVERIFIABLE"
 
+
+# ============================================================
+# TEST 5: LOW CONFIDENCE EVIDENCE
+# ============================================================
 
 def test_low_confidence_evidence():
 
@@ -148,6 +183,10 @@ def test_low_confidence_evidence():
     assert result["decision"] == "UNVERIFIABLE"
 
 
+# ============================================================
+# TEST 6: LOW SIMILARITY EVIDENCE
+# ============================================================
+
 def test_low_similarity_evidence():
 
     evidence = [
@@ -173,7 +212,11 @@ def test_low_similarity_evidence():
     assert result["decision"] == "UNVERIFIABLE"
 
 
-def test_same_domain_not_independent():
+# ============================================================
+# TEST 7: SAME DOMAIN EVIDENCE
+# ============================================================
+
+def test_same_domain_evidence():
 
     evidence = [
 
@@ -185,8 +228,18 @@ def test_same_domain_not_independent():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "UNVERIFIABLE"
+    assert result["decision"] == "SUPPORTED"
 
+    assert (
+        result["evidence_summary"][
+            "independent_supporting_sources"
+        ] == 1
+    )
+
+
+# ============================================================
+# TEST 8: INVALID CLAIM
+# ============================================================
 
 def test_invalid_claim():
 
@@ -201,12 +254,20 @@ def test_invalid_claim():
         })
 
 
+# ============================================================
+# TEST 9: EMPTY EVIDENCE
+# ============================================================
+
 def test_empty_evidence():
 
     result = decide_claim(make_claim([]))
 
     assert result["decision"] == "UNVERIFIABLE"
 
+
+# ============================================================
+# TEST 10: NEUTRAL EVIDENCE
+# ============================================================
 
 def test_neutral_evidence():
 
@@ -222,6 +283,10 @@ def test_neutral_evidence():
 
     assert result["decision"] == "UNVERIFIABLE"
 
+
+# ============================================================
+# TEST 11: MULTIPLE CLAIMS
+# ============================================================
 
 def test_multiple_claims():
 
@@ -268,12 +333,20 @@ def test_multiple_claims():
     assert result["summary"]["contradicted"] == 1
 
 
+# ============================================================
+# TEST 12: INVALID PIPELINE INPUT
+# ============================================================
+
 def test_invalid_pipeline_input():
 
     with pytest.raises(ValueError):
 
         decide_claims([])
 
+
+# ============================================================
+# TEST 13: STRONG EVIDENCE FILTERING
+# ============================================================
 
 def test_filter_strong_evidence():
 
@@ -295,6 +368,10 @@ def test_filter_strong_evidence():
     assert len(result) == 1
 
 
+# ============================================================
+# TEST 14: SOURCE DOMAIN EXTRACTION
+# ============================================================
+
 def test_source_domain():
 
     evidence = {
@@ -307,6 +384,10 @@ def test_source_domain():
 
     assert result == "wikipedia.org"
 
+
+# ============================================================
+# TEST 15: EVIDENCE TEXT PRESERVATION
+# ============================================================
 
 def test_evidence_text_preserved():
 

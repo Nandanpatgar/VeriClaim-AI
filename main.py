@@ -1,3 +1,4 @@
+
 """
 VERI-CLAIM-AI
 End-to-End Hallucination Detection System
@@ -9,10 +10,18 @@ Pipeline:
 4. NLI Verification - DeBERTa
 5. Decision Engine
 6. Verification Report Generation
+
+Designed for:
+- Direct Python execution
+- Backend integration
+- Future FastAPI / React frontend integration
 """
 
 import json
+import os
+import tempfile
 import traceback
+from datetime import datetime, timezone
 
 from claim_extractor import extract_claims
 from evidence_retrieval import retrieve_evidence
@@ -21,28 +30,55 @@ from nli_verifier import verify_claims
 from decision_engine import decide_claims
 
 
-# ==================================================
+# ============================================================
 # CONFIGURATION
-# ==================================================
+# ============================================================
+
+SYSTEM_NAME = "Veri-Claim-AI"
 
 REPORT_FILE = "verification_report.json"
 
+MIN_INPUT_LENGTH = 10
 
-# ==================================================
+
+# ============================================================
+# CUSTOM EXCEPTIONS
+# ============================================================
+
+class PipelineError(Exception):
+    """Raised when a verification pipeline stage fails."""
+
+    def __init__(self, stage, message):
+        self.stage = stage
+        self.message = message
+
+        super().__init__(
+            f"{stage}: {message}"
+        )
+
+
+# ============================================================
 # INPUT VALIDATION
-# ==================================================
+# ============================================================
 
 def validate_input(text):
+    """
+    Validate user-provided text.
+    """
 
     if not isinstance(text, str):
-        raise ValueError("Input must be a string.")
+        raise ValueError(
+            "Input must be a string."
+        )
 
     text = text.strip()
 
     if not text:
-        raise ValueError("Input cannot be empty.")
+        raise ValueError(
+            "Input cannot be empty."
+        )
 
-    if len(text) < 10:
+    if len(text) < MIN_INPUT_LENGTH:
         raise ValueError(
             "Please enter a longer factual statement."
         )
@@ -50,11 +86,19 @@ def validate_input(text):
     return text
 
 
-# ==================================================
-# NORMALIZE CLAIM EXTRACTION OUTPUT
-# ==================================================
+# ============================================================
+# CLAIM NORMALIZATION
+# ============================================================
 
 def normalize_claims(result):
+    """
+    Normalize claim extraction output.
+
+    Supports:
+    - List of claim dictionaries
+    - Dictionary containing a claims list
+    - List of claim strings
+    """
 
     if isinstance(result, dict):
 
@@ -66,154 +110,356 @@ def normalize_claims(result):
 
     else:
 
-        raise ValueError(
+        raise PipelineError(
+            "Claim Extraction",
             "Unexpected claim extraction output."
         )
 
     if not isinstance(claims, list) or not claims:
 
-        raise ValueError(
+        raise PipelineError(
+            "Claim Extraction",
             "No factual claims could be extracted."
         )
 
-    return claims
+    normalized = []
 
+    for index, item in enumerate(claims, start=1):
 
-# ==================================================
-# MAIN VERIFICATION PIPELINE
-# ==================================================
+        if isinstance(item, str):
 
-def run_pipeline(text):
+            claim_text = item.strip()
 
-    text = validate_input(text)
+            claim = {
+                "claim_id": index,
+                "claim": claim_text
+            }
 
-    print("\n" + "=" * 65)
-    print("                 VERI-CLAIM-AI")
-    print("          HALLUCINATION DETECTION SYSTEM")
-    print("=" * 65)
+        elif isinstance(item, dict):
 
-    # ----------------------------------------------
-    # STEP 1: CLAIM EXTRACTION
-    # ----------------------------------------------
+            claim_text = item.get("claim", "")
 
-    print("\n[1/5] Extracting factual claims...")
+            if not isinstance(claim_text, str):
+                continue
 
-    extracted_result = extract_claims(text)
+            claim_text = claim_text.strip()
 
-    claims = normalize_claims(extracted_result)
+            claim = item.copy()
 
-    print(f"Claims extracted: {len(claims)}")
+            claim["claim"] = claim_text
 
-    # ----------------------------------------------
-    # STEP 2: EVIDENCE RETRIEVAL
-    # ----------------------------------------------
+            if not claim.get("claim_id"):
+                claim["claim_id"] = index
 
-    print("\n[2/5] Retrieving supporting evidence...")
+        else:
+            continue
 
-    retrieval_result = retrieve_evidence({
+        if claim_text:
+            normalized.append(claim)
 
-        "claims": claims
+    if not normalized:
 
-    })
-
-    if not isinstance(retrieval_result, dict):
-
-        raise ValueError(
-            "Evidence retrieval returned an invalid result."
+        raise PipelineError(
+            "Claim Extraction",
+            "No valid factual claims were extracted."
         )
 
-    retrieved_claims = retrieval_result.get(
+    return normalized
+
+
+# ============================================================
+# PIPELINE OUTPUT VALIDATION
+# ============================================================
+
+def validate_pipeline_output(result, stage):
+    """
+    Ensure each pipeline stage returns a dictionary.
+    """
+
+    if not isinstance(result, dict):
+
+        raise PipelineError(
+            stage,
+            "Module returned an invalid output. "
+            "Expected a dictionary."
+        )
+
+    return result
+
+
+# ============================================================
+# EVIDENCE STATISTICS
+# ============================================================
+
+def calculate_evidence_statistics(retrieval_result):
+    """
+    Calculate evidence retrieval statistics.
+    """
+
+    claims = retrieval_result.get(
         "claims",
         []
     )
 
-    if not isinstance(retrieved_claims, list):
+    total_evidence = 0
 
-        raise ValueError(
-            "Retrieved claims must be a list."
+    claim_statistics = []
+
+    for item in claims:
+
+        if not isinstance(item, dict):
+            continue
+
+        evidence = item.get(
+            "evidence",
+            []
         )
 
-    total_evidence = sum(
+        if not isinstance(evidence, list):
+            evidence = []
 
-        len(item.get("evidence", []))
+        count = len(evidence)
 
-        for item in retrieved_claims
+        total_evidence += count
 
-        if isinstance(item, dict)
+        claim_statistics.append({
 
-    )
+            "claim_id": item.get("claim_id"),
 
-    print(f"Evidence collected: {total_evidence}")
+            "claim": item.get("claim"),
 
-    # ----------------------------------------------
+            "evidence_count": count
+
+        })
+
+    return {
+
+        "total_evidence": total_evidence,
+
+        "claims_with_evidence": sum(
+            item["evidence_count"] > 0
+            for item in claim_statistics
+        ),
+
+        "claims_without_evidence": sum(
+            item["evidence_count"] == 0
+            for item in claim_statistics
+        ),
+
+        "claim_statistics": claim_statistics
+
+    }
+
+
+# ============================================================
+# MAIN VERIFICATION PIPELINE
+# ============================================================
+
+def run_pipeline(text):
+    """
+    Execute the complete hallucination detection pipeline.
+
+    This function is independent of terminal input/output.
+
+    It can be called directly from a future FastAPI endpoint.
+    """
+
+    text = validate_input(text)
+
+    pipeline_started = datetime.now(timezone.utc)
+
+    # --------------------------------------------------------
+    # STEP 1: CLAIM EXTRACTION
+    # --------------------------------------------------------
+
+    try:
+
+        extracted_result = extract_claims(text)
+
+        claims = normalize_claims(
+            extracted_result
+        )
+
+    except PipelineError:
+        raise
+
+    except Exception as error:
+
+        raise PipelineError(
+            "Claim Extraction",
+            str(error)
+        ) from error
+
+    # --------------------------------------------------------
+    # STEP 2: EVIDENCE RETRIEVAL
+    # --------------------------------------------------------
+
+    try:
+
+        retrieval_result = retrieve_evidence({
+
+            "claims": claims
+
+        })
+
+        retrieval_result = validate_pipeline_output(
+            retrieval_result,
+            "Evidence Retrieval"
+        )
+
+        retrieved_claims = retrieval_result.get(
+            "claims",
+            []
+        )
+
+        if not isinstance(retrieved_claims, list):
+
+            raise PipelineError(
+                "Evidence Retrieval",
+                "Retrieved claims must be a list."
+            )
+
+        evidence_statistics = calculate_evidence_statistics(
+            retrieval_result
+        )
+
+    except PipelineError:
+        raise
+
+    except Exception as error:
+
+        raise PipelineError(
+            "Evidence Retrieval",
+            str(error)
+        ) from error
+
+    # --------------------------------------------------------
     # STEP 3: EVIDENCE RANKING
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
-    print("\n[3/5] Ranking evidence using MiniLM...")
+    try:
 
-    ranked_result = rank_evidence(
-        retrieval_result
-    )
-
-    if not isinstance(ranked_result, dict):
-
-        raise ValueError(
-            "Evidence ranking returned an invalid result."
+        ranked_result = rank_evidence(
+            retrieval_result
         )
 
-    print("Evidence ranking completed.")
+        ranked_result = validate_pipeline_output(
+            ranked_result,
+            "Evidence Ranking"
+        )
 
-    # ----------------------------------------------
+    except PipelineError:
+        raise
+
+    except Exception as error:
+
+        raise PipelineError(
+            "Evidence Ranking",
+            str(error)
+        ) from error
+
+    # --------------------------------------------------------
     # STEP 4: NLI VERIFICATION
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
-    print("\n[4/5] Verifying claims using DeBERTa...")
+    try:
 
-    verification_result = verify_claims(
-        ranked_result
-    )
-
-    if not isinstance(verification_result, dict):
-
-        raise ValueError(
-            "NLI verification returned an invalid result."
+        verification_result = verify_claims(
+            ranked_result
         )
 
-    print("NLI verification completed.")
+        verification_result = validate_pipeline_output(
+            verification_result,
+            "NLI Verification"
+        )
 
-    # ----------------------------------------------
+    except PipelineError:
+        raise
+
+    except Exception as error:
+
+        raise PipelineError(
+            "NLI Verification",
+            str(error)
+        ) from error
+
+    # --------------------------------------------------------
     # STEP 5: DECISION ENGINE
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
-    print("\n[5/5] Running Decision Engine...")
+    try:
 
-    decision_result = decide_claims(
-        verification_result
-    )
-
-    if not isinstance(decision_result, dict):
-
-        raise ValueError(
-            "Decision Engine returned an invalid result."
+        decision_result = decide_claims(
+            verification_result
         )
 
-    print("Claim-level decisions completed.")
+        decision_result = validate_pipeline_output(
+            decision_result,
+            "Decision Engine"
+        )
 
-    # ----------------------------------------------
+    except PipelineError:
+        raise
+
+    except Exception as error:
+
+        raise PipelineError(
+            "Decision Engine",
+            str(error)
+        ) from error
+
+    # --------------------------------------------------------
+    # EXECUTION METADATA
+    # --------------------------------------------------------
+
+    pipeline_completed = datetime.now(timezone.utc)
+
+    duration = (
+        pipeline_completed - pipeline_started
+    ).total_seconds()
+
+    # --------------------------------------------------------
     # FINAL RESULT
-    # ----------------------------------------------
+    # --------------------------------------------------------
 
     final_result = {
 
-        "system": "Veri-Claim-AI",
+        "system": SYSTEM_NAME,
+
+        "status": "success",
 
         "original_input": text,
+
+        "metadata": {
+
+            "started_at": pipeline_started.isoformat(),
+
+            "completed_at": pipeline_completed.isoformat(),
+
+            "execution_time_seconds": round(
+                duration,
+                3
+            ),
+
+            "total_claims": len(claims),
+
+            "pipeline_stages_completed": 5
+
+        },
 
         "extracted_claims": claims,
 
         "total_claims": len(claims),
 
-        "total_evidence_retrieved": total_evidence,
+        "evidence_statistics": evidence_statistics,
+
+        "total_evidence_retrieved": (
+            evidence_statistics["total_evidence"]
+        ),
+
+        "retrieval_results": retrieval_result,
+
+        "ranking_results": ranked_result,
 
         "verification_results": verification_result,
 
@@ -224,27 +470,35 @@ def run_pipeline(text):
     return final_result
 
 
-# ==================================================
-# DISPLAY FINAL RESULTS
-# ==================================================
+# ============================================================
+# DISPLAY RESULTS
+# ============================================================
 
 def display_results(result):
+    """
+    Display verification results in the terminal.
+    """
 
     print("\n" + "=" * 65)
+
+    print("                 VERI-CLAIM-AI")
+
     print("                 FINAL RESULTS")
+
     print("=" * 65)
 
-    final_decisions = result.get(
+    decisions = result.get(
         "final_decisions",
         {}
     )
 
-    summary = final_decisions.get(
+    summary = decisions.get(
         "summary",
         {}
     )
 
     print("\nOVERALL SUMMARY")
+
     print("-" * 45)
 
     print(
@@ -263,21 +517,46 @@ def display_results(result):
         f"Unverifiable: {summary.get('unverifiable', 0)}"
     )
 
-    decisions = final_decisions.get(
+    print("\nEVIDENCE STATISTICS")
+
+    print("-" * 45)
+
+    evidence_stats = result.get(
+        "evidence_statistics",
+        {}
+    )
+
+    print(
+        f"Evidence Retrieved: "
+        f"{evidence_stats.get('total_evidence', 0)}"
+    )
+
+    print(
+        f"Claims with Evidence: "
+        f"{evidence_stats.get('claims_with_evidence', 0)}"
+    )
+
+    print(
+        f"Claims without Evidence: "
+        f"{evidence_stats.get('claims_without_evidence', 0)}"
+    )
+
+    print("\nINDIVIDUAL CLAIM RESULTS")
+
+    print("-" * 45)
+
+    claim_decisions = decisions.get(
         "decisions",
         []
     )
 
-    print("\nINDIVIDUAL CLAIM RESULTS")
-    print("-" * 45)
-
-    if not decisions:
+    if not claim_decisions:
 
         print("No claim decisions available.")
 
         return
 
-    for item in decisions:
+    for item in claim_decisions:
 
         print("\n" + "-" * 45)
 
@@ -293,10 +572,9 @@ def display_results(result):
             f"Decision: {item.get('decision', 'UNVERIFIABLE')}"
         )
 
-        # Updated field name with backward compatibility
         confidence = item.get(
             "evidence_confidence",
-            item.get("decision_confidence", 0.0)
+            0.0
         )
 
         print(
@@ -304,7 +582,7 @@ def display_results(result):
         )
 
         print(
-            f"Reason: {item.get('decision_reason', 'No explanation available.')}"
+            f"Reason: {item.get('decision_reason', '')}"
         )
 
         evidence = item.get(
@@ -315,17 +593,17 @@ def display_results(result):
         print("\nEvidence Summary:")
 
         print(
-            "Supporting evidence:",
+            "Supporting:",
             evidence.get("supporting_evidence_count", 0)
         )
 
         print(
-            "Contradicting evidence:",
+            "Contradicting:",
             evidence.get("contradicting_evidence_count", 0)
         )
 
         print(
-            "Neutral evidence:",
+            "Neutral:",
             evidence.get("neutral_evidence_count", 0)
         )
 
@@ -342,19 +620,49 @@ def display_results(result):
     print("\n" + "=" * 65)
 
 
-# ==================================================
+# ============================================================
 # SAVE VERIFICATION REPORT
-# ==================================================
+# ============================================================
 
-def save_report(result):
+def save_report(result, report_file=REPORT_FILE):
+    """
+    Save the complete verification result as JSON.
+
+    Uses a temporary file followed by an atomic replace
+    to reduce the risk of incomplete reports.
+    """
+
+    if not isinstance(result, dict):
+
+        raise ValueError(
+            "Report data must be a dictionary."
+        )
+
+    directory = os.path.dirname(
+        os.path.abspath(report_file)
+    )
+
+    temporary_path = None
 
     try:
 
-        with open(
-            REPORT_FILE,
-            "w",
-            encoding="utf-8"
+        with tempfile.NamedTemporaryFile(
+
+            mode="w",
+
+            encoding="utf-8",
+
+            suffix=".tmp",
+
+            prefix="vericlaim_",
+
+            dir=directory,
+
+            delete=False
+
         ) as file:
+
+            temporary_path = file.name
 
             json.dump(
 
@@ -364,12 +672,19 @@ def save_report(result):
 
                 indent=4,
 
-                ensure_ascii=False
+                ensure_ascii=False,
+
+                allow_nan=False
 
             )
 
+        os.replace(
+            temporary_path,
+            report_file
+        )
+
         print(
-            f"\nComplete verification report saved to {REPORT_FILE}"
+            f"\nVerification report saved: {report_file}"
         )
 
         return True
@@ -380,12 +695,22 @@ def save_report(result):
             f"\nReport generation failed: {error}"
         )
 
+        if temporary_path and os.path.exists(
+            temporary_path
+        ):
+
+            try:
+                os.remove(temporary_path)
+
+            except OSError:
+                pass
+
         return False
 
 
-# ==================================================
-# APPLICATION ENTRY POINT
-# ==================================================
+# ============================================================
+# TERMINAL APPLICATION
+# ============================================================
 
 def main():
 
@@ -423,35 +748,40 @@ def main():
 
     try:
 
-        # Execute complete pipeline
-        result = run_pipeline(user_input)
+        print("\nStarting verification pipeline...\n")
 
-        # Save report before displaying
+        result = run_pipeline(
+            user_input
+        )
+
+        print("Verification pipeline completed.")
+
         save_report(result)
 
-        # Display final results
         display_results(result)
 
-        print("\nVERIFICATION COMPLETED SUCCESSFULLY.")
+        print(
+            "\nVERIFICATION COMPLETED SUCCESSFULLY."
+        )
 
-    except Exception as error:
+    except (ValueError, PipelineError) as error:
 
-        print("\n" + "=" * 65)
-
-        print("          PIPELINE EXECUTION FAILED")
-
-        print("=" * 65)
+        print("\nPIPELINE EXECUTION FAILED")
 
         print(f"\nError: {error}")
 
-        print("\nDetailed traceback:")
+    except Exception as error:
+
+        print("\nUNEXPECTED APPLICATION ERROR")
+
+        print(f"\nError: {error}")
 
         traceback.print_exc()
 
 
-# ==================================================
-# RUN APPLICATION
-# ==================================================
+# ============================================================
+# APPLICATION ENTRY POINT
+# ============================================================
 
 if __name__ == "__main__":
 

@@ -1,5 +1,25 @@
-.venv/
+# Python
 __pycache__/
-.pytest_cache/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables
 .env
-*.pyc
+.env.*
+
+# Testing
+.pytest_cache/
+.coverage
+
+# IDE
+.vscode/
+
+# Generated reports
+verification_report.json
+
+# Logs
+*.log
