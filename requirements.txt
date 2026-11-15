@@ -10,3 +10,7 @@ pytest
 # Evidence ranking and embeddings
 sentence-transformers
 numpy
+
+# NLI verification
+transformers
+torch
