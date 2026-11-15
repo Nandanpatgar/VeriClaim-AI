@@ -1,3 +1,12 @@
+# API and HTTP requests
 requests
+
+# Environment variables
 python-dotenv
+
+# Testing
 pytest
+
+# Evidence ranking and embeddings
+sentence-transformers
+numpy
