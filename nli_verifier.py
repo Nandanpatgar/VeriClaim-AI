@@ -632,6 +632,15 @@ def verify_claims(
                 claim
             ),
 
+            "source_start": claim_data.get("source_start"),
+
+            "source_end": claim_data.get("source_end"),
+
+            "retrieval_status": claim_data.get(
+                "retrieval_status",
+                {"state": "unknown", "warnings": []}
+            ),
+
             "verification_results": results,
 
             "total_evidence_verified": len(results)

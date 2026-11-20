@@ -107,7 +107,7 @@ def test_contradicted_claim():
 # TEST 3: SINGLE-SOURCE CLAIM
 # ============================================================
 
-def test_single_source_claim_supported():
+def test_single_source_is_insufficient_for_definitive_verdict():
 
     evidence = [
 
@@ -121,7 +121,7 @@ def test_single_source_claim_supported():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "SUPPORTED"
+    assert result["decision"] == "UNVERIFIABLE"
 
     assert (
         result["evidence_summary"][
@@ -216,7 +216,7 @@ def test_low_similarity_evidence():
 # TEST 7: SAME DOMAIN EVIDENCE
 # ============================================================
 
-def test_same_domain_evidence():
+def test_same_domain_evidence_is_not_independent_corroboration():
 
     evidence = [
 
@@ -228,13 +228,25 @@ def test_same_domain_evidence():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "SUPPORTED"
+    assert result["decision"] == "UNVERIFIABLE"
 
     assert (
         result["evidence_summary"][
             "independent_supporting_sources"
         ] == 1
     )
+
+
+def test_publisher_subdomains_count_as_one_source():
+    evidence = [
+        make_evidence(1, "en.wikipedia.org", "entailment"),
+        make_evidence(2, "www.wikipedia.org", "entailment"),
+    ]
+
+    result = decide_claim(make_claim(evidence))
+
+    assert result["decision"] == "UNVERIFIABLE"
+    assert result["evidence_summary"]["independent_supporting_sources"] == 1
 
 
 # ============================================================
@@ -406,3 +418,18 @@ def test_evidence_text_preserved():
     assert len(
         result["evidence_details"]["supporting"]
     ) == 2
+
+
+def test_filtered_passages_are_not_presented_as_verdict_evidence():
+    evidence = [
+        make_evidence(1, "source1.com", "entailment", similarity=0.20),
+        make_evidence(2, "source2.com", "entailment"),
+        make_evidence(3, "source3.com", "entailment"),
+    ]
+
+    result = decide_claim(make_claim(evidence))
+
+    assert result["decision"] == "SUPPORTED"
+    assert len(result["evidence_details"]["supporting"]) == 2
+    assert len(result["excluded_evidence_details"]["supporting"]) == 1
+    assert result["evidence_summary"]["filtered_evidence_count"] == 1

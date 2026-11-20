@@ -238,6 +238,8 @@ def test_verify_claims_pipeline(monkeypatch):
 
                 "source_text": "Einstein was a physicist.",
 
+                "retrieval_status": {"state": "partial", "warnings": ["Tavily unavailable"]},
+
                 "ranked_evidence": [
 
                     {
@@ -259,6 +261,8 @@ def test_verify_claims_pipeline(monkeypatch):
     result = nv.verify_claims(ranked_result)
 
     assert len(result["claims"]) == 1
+
+    assert result["claims"][0]["retrieval_status"]["state"] == "partial"
 
     assert (
         result["claims"][0]["total_evidence_verified"]

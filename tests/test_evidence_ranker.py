@@ -166,6 +166,7 @@ def test_rank_evidence_pipeline():
                 "claim_id": 1,
                 "claim": "Albert Einstein developed relativity.",
                 "source_text": "Einstein developed relativity.",
+                "retrieval_status": {"state": "partial", "warnings": ["Tavily unavailable"]},
                 "evidence": [
                     {
                         "source": "Wikipedia",
@@ -189,6 +190,8 @@ def test_rank_evidence_pipeline():
     )
 
     assert len(result["claims"]) == 1
+
+    assert result["claims"][0]["retrieval_status"]["state"] == "partial"
 
     ranked = result["claims"][0]["ranked_evidence"]
 

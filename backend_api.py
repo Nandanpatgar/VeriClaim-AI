@@ -119,7 +119,9 @@ def verify_text(request: VerificationRequest):
     except PipelineError as error:
 
         raise HTTPException(
-            status_code=500,
+            status_code=(
+                503 if error.stage == "Evidence Retrieval" else 500
+            ),
             detail={
                 "stage": error.stage,
                 "message": error.message

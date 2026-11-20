@@ -13,6 +13,11 @@ def test_domain_extraction():
     assert result == "bbc.com"
 
 
+def test_subdomains_group_under_same_publisher_domain():
+    assert sr.get_source_domain("https://en.wikipedia.org/wiki/Claim") == "wikipedia.org"
+    assert sr.get_source_domain("https://news.bbc.co.uk/article") == "bbc.co.uk"
+
+
 def test_invalid_url():
 
     result = sr.get_source_domain("")

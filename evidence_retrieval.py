@@ -217,6 +217,15 @@ def retrieve_wikipedia_evidence(claim):
 
         data = response.json()
 
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("query"), dict)
+            or not isinstance(data["query"].get("pages"), (dict, list))
+        ):
+            raise EvidenceRetrievalError(
+                "Wikipedia returned a response without a valid query/pages result."
+            )
+
         pages = data.get("query", {}).get("pages", {})
 
         page_values = (
@@ -247,11 +256,18 @@ def retrieve_wikipedia_evidence(claim):
 
         return evidence
 
-    except requests.RequestException:
-        return []
+    except requests.RequestException as error:
+        raise EvidenceRetrievalError(
+            f"Wikipedia retrieval failed: {error}"
+        ) from error
 
-    except (ValueError, TypeError, AttributeError):
-        return []
+    except EvidenceRetrievalError:
+        raise
+
+    except (ValueError, TypeError, AttributeError) as error:
+        raise EvidenceRetrievalError(
+            f"Wikipedia returned an invalid response: {error}"
+        ) from error
 
 
 def retrieve_wikipedia(claim):
@@ -296,6 +312,11 @@ def retrieve_tavily_evidence(claim, api_key=None):
 
         data = response.json()
 
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise EvidenceRetrievalError(
+                "Tavily returned a response without a valid results list."
+            )
+
         evidence = []
 
         for result in data.get("results", []):
@@ -327,11 +348,18 @@ def retrieve_tavily_evidence(claim, api_key=None):
 
         return evidence
 
-    except requests.RequestException:
-        return []
+    except requests.RequestException as error:
+        raise EvidenceRetrievalError(
+            f"Tavily retrieval failed: {error}"
+        ) from error
 
-    except (ValueError, TypeError, AttributeError):
-        return []
+    except EvidenceRetrievalError:
+        raise
+
+    except (ValueError, TypeError, AttributeError) as error:
+        raise EvidenceRetrievalError(
+            f"Tavily returned an invalid response: {error}"
+        ) from error
 
 
 def retrieve_tavily(claim, api_key=None):
@@ -390,19 +418,39 @@ def deduplicate_evidence(evidence):
 # SINGLE CLAIM RETRIEVAL
 # ============================================================
 
-def retrieve_evidence_for_claim(claim, api_key=None):
+def retrieve_evidence_for_claim(claim, api_key=None, include_status=False):
     claim = validate_claim(claim)
 
-    wikipedia_evidence = retrieve_wikipedia_evidence(claim)
+    provider_errors = []
+    wikipedia_evidence = []
+    tavily_evidence = []
+
+    try:
+        wikipedia_evidence = retrieve_wikipedia_evidence(claim)
+    except EvidenceRetrievalError as error:
+        provider_errors.append(str(error))
 
     # Maintain compatibility with one-argument test mocks
     # and existing callers when no explicit API key is supplied.
-    if api_key is None:
-        tavily_evidence = retrieve_tavily_evidence(claim)
-    else:
-        tavily_evidence = retrieve_tavily_evidence(
-            claim,
-            api_key=api_key
+    key = api_key if api_key is not None else TAVILY_API_KEY
+    tavily_enabled = bool(key)
+    if tavily_enabled:
+        try:
+            if api_key is None:
+                tavily_evidence = retrieve_tavily_evidence(claim)
+            else:
+                tavily_evidence = retrieve_tavily_evidence(
+                    claim,
+                    api_key=api_key
+                )
+        except EvidenceRetrievalError as error:
+            provider_errors.append(str(error))
+
+    successful_providers = 1 + int(tavily_enabled) - len(provider_errors)
+    if successful_providers <= 0:
+        raise EvidenceRetrievalError(
+            "All configured evidence providers failed: "
+            + "; ".join(provider_errors)
         )
 
     combined_evidence = (
@@ -421,7 +469,22 @@ def retrieve_evidence_for_claim(claim, api_key=None):
             item.get("content", "")
         )
 
-    return unique_evidence
+    warnings = list(provider_errors)
+    if not tavily_enabled:
+        warnings.append(
+            "Tavily is not configured; this claim was searched with Wikipedia only."
+        )
+
+    status = {
+        "state": "partial" if warnings else "complete",
+        "warnings": warnings,
+        "wikipedia": "failed" if any("Wikipedia retrieval" in e or "Wikipedia returned" in e for e in provider_errors) else "available",
+        "tavily": (
+            "failed" if any("Tavily retrieval" in e or "Tavily returned" in e for e in provider_errors)
+            else "available" if tavily_enabled else "disabled"
+        ),
+    }
+    return (unique_evidence, status) if include_status else unique_evidence
 
 
 # ============================================================
@@ -462,16 +525,18 @@ def retrieve_evidence(data, api_key=None):
             claim_data.get("claim")
         )
 
-        evidence = retrieve_evidence_for_claim(
+        evidence, retrieval_status = retrieve_evidence_for_claim(
             claim_text,
-            api_key=api_key
+            api_key=api_key,
+            include_status=True
         )
 
         processed_claim = {
             **claim_data,
             "claim": claim_text,
             "evidence": evidence,
-            "total_evidence": len(evidence)
+            "total_evidence": len(evidence),
+            "retrieval_status": retrieval_status
         }
 
         processed_claims.append(processed_claim)

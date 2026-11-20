@@ -155,6 +155,23 @@ Each claim receives one of the following classifications:
 | CONTRADICTED   | Available evidence provides contradictory information.                |
 | UNVERIFIABLE   | Available evidence is insufficient to establish the claim's validity. |
 
+The current decision policy requires qualifying evidence from at least two
+distinct publisher domains before assigning `SUPPORTED` or `CONTRADICTED`.
+Multiple subdomains are grouped under a common registrable-domain heuristic.
+This is a corroboration safeguard, not a calibrated accuracy guarantee.
+Evidence that fails the relevance, NLI-confidence, or source-reliability
+filters is kept separately from evidence used for the verdict.
+
+If all configured retrieval providers fail, the API returns a service error
+instead of reporting the claim as `UNVERIFIABLE`. When retrieval partially
+works, the response carries provider warnings so users can interpret results
+with the available coverage in mind. If Tavily is not configured, the report
+marks the search as partial and notes that only Wikipedia was queried.
+
+The displayed claim score is a heuristic combination of NLI confidence and
+source reliability. It is not a calibrated probability that the claim is
+correct and is not the system's measured accuracy.
+
 #### 7. Report Generation
 
 The reporting component organizes the verification results into a structured output.
@@ -209,6 +226,7 @@ VERI-CLAIM-AI/
 ├── nli_verifier.py
 ├── source_reliability.py
 ├── decision_engine.py
+├── evaluation.py
 │
 ├── tests/
 │   ├── test_input_validation.py
@@ -221,6 +239,10 @@ VERI-CLAIM-AI/
 │   │   ├── App.jsx
 │   │   ├── App.css
 │   │   └── main.jsx
+│   │   └── components/
+│   │       ├── ClaimCard.jsx
+│   │       ├── EvidenceGroup.jsx
+│   │       └── ErrorBoundary.jsx
 │   │
 │   ├── index.html
 │   └── package.json
@@ -306,7 +328,7 @@ Ensure the Ollama service is running before executing the claim extraction pipel
 From the project root, execute:
 
 ```bash
-uvicorn backend_api:app --reload
+python -m uvicorn backend_api:app --reload
 ```
 
 The backend will be available at:
@@ -442,6 +464,16 @@ python -m pytest tests/test_data_contracts.py -v
 ```
 
 Testing helps validate input handling, data contracts and individual verification components.
+
+### Labeled Evaluation
+
+`evaluation.py` computes accuracy on covered predictions, macro F1, per-class
+precision/recall/F1, false-positive and false-negative rates, a confusion
+matrix, and classification coverage from caller-supplied labeled records.
+`None` predictions are treated as abstentions and excluded from accuracy while
+reducing coverage. The repository does not include a curated ground-truth
+benchmark, so this tool does not imply or report a measured system accuracy
+until evaluated against an independently labeled dataset.
 
 ---
 

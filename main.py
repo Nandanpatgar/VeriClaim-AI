@@ -422,6 +422,21 @@ def run_pipeline(text):
     # FINAL RESULT
     # --------------------------------------------------------
 
+    retrieval_states = [
+        item.get("retrieval_status", {}).get("state", "unknown")
+        for item in retrieval_result.get("claims", [])
+        if isinstance(item, dict)
+        and isinstance(item.get("retrieval_status", {}), dict)
+    ]
+
+    retrieval_state = (
+        "partial" if "partial" in retrieval_states
+        else "complete" if retrieval_states and all(
+            state == "complete" for state in retrieval_states
+        )
+        else "unknown"
+    )
+
     final_result = {
 
         "system": SYSTEM_NAME,
@@ -442,6 +457,8 @@ def run_pipeline(text):
             ),
 
             "total_claims": len(claims),
+
+            "evidence_retrieval_status": retrieval_state,
 
             "pipeline_stages_completed": 5
 

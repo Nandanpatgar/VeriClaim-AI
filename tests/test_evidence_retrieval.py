@@ -61,6 +61,23 @@ def test_wikipedia_empty_results(monkeypatch):
     assert result == []
 
 
+def test_wikipedia_network_failure_is_not_reported_as_no_evidence(monkeypatch):
+    def fail_request(*args, **kwargs):
+        raise er.requests.ConnectionError("offline")
+
+    monkeypatch.setattr(er.requests, "get", fail_request)
+
+    with pytest.raises(er.EvidenceRetrievalError, match="Wikipedia retrieval failed"):
+        er.retrieve_wikipedia_evidence("Unknown topic")
+
+
+def test_wikipedia_api_error_payload_is_not_treated_as_empty_results(monkeypatch):
+    monkeypatch.setattr(er.requests, "get", lambda *args, **kwargs: MockResponse({"error": "upstream"}))
+
+    with pytest.raises(er.EvidenceRetrievalError, match="without a valid query/pages"):
+        er.retrieve_wikipedia_evidence("Unknown topic")
+
+
 # ==================================================
 # TAVILY TESTS
 # ==================================================
@@ -101,6 +118,13 @@ def test_tavily_missing_api_key():
     )
 
     assert result == []
+
+
+def test_tavily_malformed_success_payload_is_reported(monkeypatch):
+    monkeypatch.setattr(er.requests, "post", lambda *args, **kwargs: MockResponse({"error": "invalid key"}))
+
+    with pytest.raises(er.EvidenceRetrievalError, match="without a valid results list"):
+        er.retrieve_tavily_evidence("A claim", api_key="test-key")
 
 
 # ==================================================
@@ -203,3 +227,39 @@ def test_empty_claims():
     result = er.retrieve_evidence({"claims": []})
 
     assert result == {"claims": []}
+
+
+def test_partial_provider_failure_is_exposed(monkeypatch):
+    def fail_wikipedia(claim):
+        raise er.EvidenceRetrievalError("Wikipedia retrieval failed: offline")
+
+    monkeypatch.setattr(er, "retrieve_wikipedia_evidence", fail_wikipedia)
+    monkeypatch.setattr(
+        er,
+        "retrieve_tavily_evidence",
+        lambda claim, **kwargs: [{
+            "source": "Tavily",
+            "title": "Example",
+            "content": "Evidence text.",
+            "url": "https://example.com/article"
+        }]
+    )
+
+    evidence, status = er.retrieve_evidence_for_claim(
+        "A test claim.", api_key="test-key", include_status=True
+    )
+
+    assert len(evidence) == 1
+    assert status["state"] == "partial"
+    assert status["wikipedia"] == "failed"
+
+
+def test_all_configured_provider_failures_raise_error(monkeypatch):
+    def fail_provider(*args, **kwargs):
+        raise er.EvidenceRetrievalError("provider offline")
+
+    monkeypatch.setattr(er, "retrieve_wikipedia_evidence", fail_provider)
+    monkeypatch.setattr(er, "retrieve_tavily_evidence", fail_provider)
+
+    with pytest.raises(er.EvidenceRetrievalError, match="All configured evidence providers failed"):
+        er.retrieve_evidence_for_claim("A test claim.", api_key="test-key")

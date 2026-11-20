@@ -448,6 +448,15 @@ def rank_evidence(
                 ""
             ),
 
+            "source_start": claim_item.get("source_start"),
+
+            "source_end": claim_item.get("source_end"),
+
+            "retrieval_status": claim_item.get(
+                "retrieval_status",
+                {"state": "unknown", "warnings": []}
+            ),
+
             "ranked_evidence": ranked,
 
             "total_evidence": len(evidence),
