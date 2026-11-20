@@ -10,8 +10,6 @@
 .input-section, .summary-card, .claim-card { background: #fff; border: 1px solid #e5e9f0; border-radius: 12px; box-shadow: 0 5px 20px rgba(20, 40, 80, .045); }
 .input-section { padding: 24px; }
 .input-section label { display: block; font-weight: 650; margin-bottom: 12px; }
-.sample-row { display: flex; align-items: center; gap: 10px; margin: -4px 0 11px; color: #64748b; font-size: 12px; }
-.sample-btn { padding: 5px 9px; color: #356ac3; background: #eef4ff; border: 1px solid #d7e4fb; font-size: 12px; }
 .input-section textarea { display: block; width: 100%; min-height: 170px; resize: vertical; padding: 15px; color: #172033; background: #fff; border: 1px solid #cfd7e3; border-radius: 8px; font: inherit; font-size: 15px; line-height: 1.6; outline: none; }
 .input-section textarea:focus { border-color: #356ac3; box-shadow: 0 0 0 3px rgba(53, 106, 195, .12); }
 .input-section textarea::placeholder { color: #8490a2; }
@@ -88,7 +86,6 @@ body { color: #e6edf8; background: #0b1220; }
 .input-section, .summary-card, .claim-card { background: #111d30; border-color: #263853; box-shadow: 0 8px 26px rgba(0, 0, 0, .16); }
 .input-section textarea { color: #e6edf8; background: #0b1525; border-color: #334762; }
 .input-section textarea::placeholder { color: #8798b1; }
-.sample-btn { color: #c2d8ff; background: #182b47; border-color: #2c466b; }
 .claim-card h3, .source-heading strong { color: #e6edf8; }
 .source-original { color: #9aabc4; }
 .reason { color: #c2cde0; background: #18263b; }

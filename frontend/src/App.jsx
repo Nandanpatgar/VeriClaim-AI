@@ -5,7 +5,6 @@ import "./App.css";
 
 const API_URL = "http://127.0.0.1:8000/api/verify";
 const MAX_LENGTH = 10000;
-const SAMPLE_TEXT = "VCET Puttur was established in 2001. Mrs. Akshaya D. Shetty is listed as an Assistant Professor at VCET. The official profile lists Digital Electronics and Communication as her specialization.";
 
 function asObjectList(value) {
   return Array.isArray(value)
@@ -106,10 +105,6 @@ function VerificationApp() {
         </section>
         <form className="input-section" onSubmit={verifyText}>
           <label htmlFor="claim-input">Enter text to verify</label>
-          <div className="sample-row">
-            <span>Need a quick example?</span>
-            <button type="button" className="sample-btn" onClick={() => { setInput(SAMPLE_TEXT); setError(""); }} disabled={loading}>Use VCET sample</button>
-          </div>
           <textarea id="claim-input" value={input} onChange={(event) => setInput(event.target.value.slice(0, MAX_LENGTH))} placeholder="Paste your AI-generated response here..." rows={7} maxLength={MAX_LENGTH} disabled={loading} />
           <div className="input-footer">
             <span>{input.length.toLocaleString()} / {MAX_LENGTH.toLocaleString()} characters</span>
