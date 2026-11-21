@@ -399,6 +399,22 @@ def prepare_evidence_details(evidence):
                 "similarity_score"
             ),
 
+            "semantic_similarity_score": enriched.get(
+                "semantic_similarity_score"
+            ),
+
+            "lexical_overlap_score": enriched.get(
+                "lexical_overlap_score"
+            ),
+
+            "retrieval_provider": enriched.get(
+                "retrieval_provider"
+            ),
+
+            "published_date": enriched.get(
+                "published_date"
+            ),
+
             "nli_confidence": enriched.get(
                 "nli_confidence"
             ),
@@ -406,7 +422,9 @@ def prepare_evidence_details(evidence):
             "nli_probabilities": enriched.get(
                 "nli_probabilities",
                 {}
-            )
+            ),
+
+            "nli_label": label
 
         }
 

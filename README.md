@@ -493,13 +493,16 @@ until evaluated against an independently labeled dataset.
 - Claim-level hallucination detection.
 - Automated factual claim extraction.
 - Evidence retrieval from external knowledge sources.
-- Semantic evidence ranking.
+- Hybrid semantic and lexical evidence ranking.
 - Natural Language Inference-based verification.
 - Source reliability assessment.
 - Evidence-based claim classification.
 - Explainable verification decisions.
 - FastAPI-based backend integration.
 - React-based web interface.
+- Responsive multi-view interface with claim-level evidence explorer.
+- Browser-local verification history and analytics based on completed reports.
+- Text-file input and JSON/CSV report exports.
 - Structured verification results.
 
 ---

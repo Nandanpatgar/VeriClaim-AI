@@ -75,6 +75,28 @@ def test_supported_claim():
     assert result["decision"] == "SUPPORTED"
 
 
+def test_evidence_report_preserves_ranking_and_retrieval_provenance():
+    details = decision_engine.prepare_evidence_details([{
+        "evidence_id": 1,
+        "source": "Wikipedia",
+        "retrieval_provider": "Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Example",
+        "evidence_text": "A verifiable evidence passage.",
+        "nli_label": "entailment",
+        "similarity_score": 0.82,
+        "semantic_similarity_score": 0.9,
+        "lexical_overlap_score": 0.5,
+        "published_date": "2025-01-02",
+    }])
+
+    evidence = details["supporting"][0]
+    assert evidence["semantic_similarity_score"] == 0.9
+    assert evidence["lexical_overlap_score"] == 0.5
+    assert evidence["retrieval_provider"] == "Wikipedia"
+    assert evidence["published_date"] == "2025-01-02"
+    assert evidence["nli_label"] == "entailment"
+
+
 # ============================================================
 # TEST 2: CONTRADICTED CLAIM
 # ============================================================

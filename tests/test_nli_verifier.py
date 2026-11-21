@@ -245,9 +245,12 @@ def test_verify_claims_pipeline(monkeypatch):
                     {
                         "evidence_id": 1,
                         "source": "Wikipedia",
+                        "retrieval_provider": "Wikipedia",
                         "content": "Albert Einstein was a physicist.",
                         "url": "https://example.com/einstein",
-                        "similarity_score": 0.95
+                        "similarity_score": 0.95,
+                        "semantic_similarity_score": 0.9,
+                        "lexical_overlap_score": 0.7
                     }
 
                 ]
@@ -273,6 +276,9 @@ def test_verify_claims_pipeline(monkeypatch):
         result["claims"][0]["verification_results"][0]["nli_label"]
         == "entailment"
     )
+    assert result["claims"][0]["verification_results"][0]["semantic_similarity_score"] == 0.9
+    assert result["claims"][0]["verification_results"][0]["lexical_overlap_score"] == 0.7
+    assert result["claims"][0]["verification_results"][0]["retrieval_provider"] == "Wikipedia"
 
 
 # ==================================================

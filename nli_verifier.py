@@ -539,6 +539,18 @@ def verify_claim_evidence(
                 item.get("score", 0)
             ),
 
+            "semantic_similarity_score": item.get(
+                "semantic_similarity_score"
+            ),
+
+            "lexical_overlap_score": item.get(
+                "lexical_overlap_score"
+            ),
+
+            "retrieval_provider": item.get("retrieval_provider"),
+
+            "published_date": item.get("published_date"),
+
             "nli_label": label,
 
             "nli_confidence": confidence,
