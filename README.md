@@ -112,6 +112,7 @@ The retrieved passages are associated with their source information and claim co
 Retrieved passages are evaluated to identify evidence that is semantically relevant to the corresponding claim.
 
 Sentence embeddings are generated using a transformer-based embedding model. The ranker blends cosine similarity (80%) with token-overlap F1 (20%) so paraphrases remain visible while exact names and numbers influence passage ordering. Both component scores are included in the result; the combined relevance score is not a probability of truth.
+Sentence embeddings are generated using a transformer-based embedding model, and cosine similarity is used to estimate semantic relevance.
 
 **Technologies:** Sentence Transformers, all-MiniLM-L6-v2, Cosine Similarity.
 
@@ -330,6 +331,7 @@ From the project root, execute:
 
 ```bash
 python -m uvicorn backend_api:app --reload
+uvicorn backend_api:app --reload
 ```
 
 The backend will be available at:
@@ -494,6 +496,7 @@ until evaluated against an independently labeled dataset.
 - Automated factual claim extraction.
 - Evidence retrieval from external knowledge sources.
 - Hybrid semantic and lexical evidence ranking.
+- Semantic evidence ranking.
 - Natural Language Inference-based verification.
 - Source reliability assessment.
 - Evidence-based claim classification.
