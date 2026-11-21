@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, ArrowDown, ArrowRight, BarChart3, Check, ChevronDown,
-  CircleAlert, Clock3, FileDown, FileText, History, Home, Layers3,
-  Menu, MessageSquareText, Network, ShieldCheck, Sparkles,
-  Trash2, Upload, X
+  Activity, ArrowRight, BarChart3, Check,
+  CircleAlert, Clock3, Database, FileDown, FileText, History, Layers3,
+  Menu, MessageSquareText, ShieldCheck, Trash2, Upload, X
 } from "lucide-react";
 import ClaimCard from "./components/ClaimCard.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
@@ -15,11 +14,11 @@ const MAX_LENGTH = 10000;
 const HISTORY_KEY = "vericlaim.sessions.v1";
 const MAX_HISTORY = 8;
 const NAV_ITEMS = [
-  { id: "home", label: "Home", icon: Home },
-  { id: "verify", label: "Verify", icon: ShieldCheck },
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { id: "verify", label: "New verification", icon: ShieldCheck },
   { id: "history", label: "History", icon: History },
-  { id: "about", label: "About", icon: Layers3 },
+  { id: "analytics", label: "Analytics", icon: Activity },
+  { id: "about", label: "About / method", icon: Layers3 },
 ];
 
 function asObjectList(value) {
@@ -90,9 +89,9 @@ function SiteNav({ active, onNavigate }) {
   return (
     <header className="site-header">
       <div className="nav-shell">
-        <button className="brand-lockup" type="button" onClick={() => onNavigate("home")} aria-label="Veri-Claim-AI home">
+        <button className="brand-lockup" type="button" onClick={() => onNavigate("dashboard")} aria-label="Veri-Claim-AI dashboard">
           <span className="brand-mark"><ShieldCheck size={20} strokeWidth={2.3} /></span>
-          <span className="brand-type"><strong>VERI<span>·</span>CLAIM</strong><small>INTELLIGENCE, VERIFIED</small></span>
+          <span className="brand-type"><strong>VERI<span>·</span>CLAIM</strong><small>CLAIM VERIFICATION</small></span>
         </button>
         <button className="mobile-menu-toggle" type="button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
@@ -103,59 +102,10 @@ function SiteNav({ active, onNavigate }) {
               <Icon size={15} strokeWidth={1.8} /><span>{label}</span>
             </button>
           ))}
-          <button className="nav-cta" type="button" onClick={() => { onNavigate("verify"); setMenuOpen(false); }}>Start a check <ArrowRight size={15} /></button>
+          <button className="nav-cta" type="button" onClick={() => { onNavigate("verify"); setMenuOpen(false); }}>New verification <ArrowRight size={15} /></button>
         </nav>
       </div>
     </header>
-  );
-}
-
-const FEATURES = [
-  { number: "01", icon: MessageSquareText, title: "Claim by claim", copy: "Separate a long response into factual statements that can be checked on their own.", className: "feature-red" },
-  { number: "02", icon: Network, title: "Evidence intelligence", copy: "Find relevant passages, compare meaning with exact terms, and keep source context attached.", className: "feature-violet" },
-  { number: "03", icon: ShieldCheck, title: "Explainable decisions", copy: "See what supports, challenges, or leaves each claim unresolved—with reasons and provenance.", className: "feature-gold" },
-];
-
-function FeatureCard({ feature, index }) {
-  const Icon = feature.icon;
-  return (
-    <article className={`feature-card ${feature.className}`} style={{ "--feature-index": index }}>
-      <div className="feature-card-top"><span>{feature.number} / CAPABILITY</span><Icon size={21} strokeWidth={1.7} /></div>
-      <div className="feature-art" aria-hidden="true"><span className="art-orbit orbit-one" /><span className="art-orbit orbit-two" /><span className="art-core"><Icon size={29} /></span></div>
-      <div><h3>{feature.title}</h3><p>{feature.copy}</p></div>
-      <ArrowDown className="feature-arrow" size={17} aria-hidden="true" />
-    </article>
-  );
-}
-
-function HeroSection({ onNavigate }) {
-  return (
-    <>
-      <section className="hero-cinema">
-        <div className="hero-grid" aria-hidden="true" />
-        <div className="hero-glow hero-glow-red" aria-hidden="true" />
-        <div className="hero-glow hero-glow-blue" aria-hidden="true" />
-        <div className="hero-content">
-          <div className="eyebrow"><span className="live-dot" /> EVIDENCE-GROUNDED AI VERIFICATION</div>
-          <h1>Truth deserves<br /><span>to be verified.</span></h1>
-          <p className="hero-copy">An intelligent evidence-grounded platform that investigates factual claims, evaluates sources, and surfaces uncertainty in AI-generated content.</p>
-          <div className="hero-actions">
-            <button className="button-primary" type="button" onClick={() => onNavigate("verify")}><Sparkles size={17} /> Start verification <ArrowRight size={16} /></button>
-            <button className="button-quiet" type="button" onClick={() => onNavigate("about")}>Explore how it works <ArrowDown size={15} /></button>
-          </div>
-          <div className="hero-capabilities">
-            <span><Check size={14} /> Claim-level analysis</span><span><Check size={14} /> Evidence-linked results</span><span><Check size={14} /> Transparent uncertainty</span>
-          </div>
-        </div>
-        <div className="hero-index" aria-hidden="true"><span>VERIFICATION SYSTEM</span><strong>01 — 05</strong></div>
-        <div className="hero-bottom-rule" aria-hidden="true"><span /></div>
-      </section>
-      <section className="feature-section content-shell">
-        <div className="section-heading"><div><span className="eyebrow">A CLEARER VIEW OF WHAT’S TRUE</span><h2>Evidence is the story.</h2></div><p>Every result connects a claim to the information behind its classification.</p></div>
-        <div className="feature-grid">{FEATURES.map((feature, index) => <FeatureCard key={feature.number} feature={feature} index={index} />)}</div>
-      </section>
-      <section className="manifesto-band"><div className="manifesto-inner"><span className="eyebrow">THE VERI-CLAIM METHOD</span><p>From generated text to grounded evidence.<br /><em>One claim at a time.</em></p><button className="text-link" type="button" onClick={() => onNavigate("verify")}>Enter the verification workspace <ArrowRight size={16} /></button></div><div className="manifesto-visual" aria-hidden="true"><div className="manifesto-ring ring-a" /><div className="manifesto-ring ring-b" /><div className="manifesto-center"><ShieldCheck size={31} /></div></div></section>
-    </>
   );
 }
 
@@ -185,7 +135,7 @@ function VerificationWorkspace({ input, setInput, onSubmit, loading, error, onFi
   return (
     <section className="workspace-page content-shell" id="verify-workspace">
       <div className="page-heading">
-        <div><div className="eyebrow"><span className="live-dot" /> VERIFICATION WORKSPACE</div><h1>Put a claim<br /><span>under the lens.</span></h1><p>Submit AI-generated text to trace its factual claims back to evidence.</p></div>
+        <div><div className="eyebrow"><span className="live-dot" /> VERIFICATION WORKSPACE</div><h1>New verification</h1><p>Submit AI-generated text to trace its factual claims back to evidence.</p></div>
         <div className="workspace-stamp"><ShieldCheck size={21} /><span>LOCAL WORKSPACE</span><small>Text is sent to your configured backend.</small></div>
       </div>
 
@@ -226,34 +176,77 @@ function DashboardView({ sessions, onNavigate, onOpen }) {
     acc.supported += safeCount(summary.supported);
     acc.contradicted += safeCount(summary.contradicted);
     acc.unverifiable += safeCount(summary.unverifiable);
-    acc.duration += safeCount(session.result?.metadata?.execution_time_seconds);
+    const duration = Number(session.result?.metadata?.execution_time_seconds);
+    if (Number.isFinite(duration) && duration >= 0) {
+      acc.duration += duration;
+      acc.durationSamples += 1;
+    }
     return acc;
-  }, { sessions: 0, claims: 0, supported: 0, contradicted: 0, unverifiable: 0, duration: 0 }), [sessions]);
-  const averageDuration = totals.sessions ? (totals.duration / totals.sessions).toFixed(1) : "—";
-  const maxClaims = Math.max(1, ...sessions.slice(0, 7).map((session) => safeCount(session.summary?.total_claims ?? session.decisions.length)));
-  const trend = [...sessions].slice(0, 7).reverse();
+  }, { sessions: 0, claims: 0, supported: 0, contradicted: 0, unverifiable: 0, duration: 0, durationSamples: 0 }), [sessions]);
+  const averageDuration = totals.durationSamples ? (totals.duration / totals.durationSamples).toFixed(1) : "—";
   return (
     <section className="content-shell interior-page">
-      <div className="page-heading compact-heading"><div><div className="eyebrow">YOUR VERIFICATION ACTIVITY</div><h1>Signal, over time.</h1><p>Private analytics calculated from reports saved in this browser.</p></div><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>New verification <ArrowRight size={16} /></button></div>
-      {!sessions.length ? <div className="empty-state dashboard-empty"><BarChart3 size={30} /><h3>Your dashboard starts with a verification.</h3><p>Once you verify text, actual claim counts and durations will appear here.</p><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>Start a verification <ArrowRight size={15} /></button></div> : <>
-        <div className="metric-grid"><MetricCard label="Sessions" value={totals.sessions} detail="Saved in this browser" icon={Activity} /><MetricCard label="Claims reviewed" value={totals.claims} detail="Across saved reports" icon={MessageSquareText} /><MetricCard label="Average run time" value={`${averageDuration}${averageDuration === "—" ? "" : "s"}`} detail="Backend-reported duration" icon={Clock3} /><MetricCard label="Unverifiable" value={totals.unverifiable} detail="Claims without a clear verdict" icon={CircleAlert} tone="metric-amber" /></div>
-        <div className="dashboard-grid"><section className="panel trend-panel"><div className="panel-heading"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Claims per session</h2></div><span className="panel-range">LAST {trend.length}</span></div><div className="trend-chart" role="img" aria-label={`Claim counts in the last ${trend.length} saved sessions`}>{trend.map((session) => { const count = safeCount(session.summary?.total_claims ?? session.decisions.length); const height = Math.max(8, (count / maxClaims) * 100); return <button className="trend-column" type="button" key={session.id} onClick={() => onOpen(session)} aria-label={`${session.title}: ${count} claims`}><span className="trend-value">{count}</span><span className="trend-bar" style={{ height: `${height}%` }} /><small>{new Date(session.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</small></button>; })}</div><div className="chart-footnote">Claim totals from completed reports only.</div></section>
-          <section className="panel verdict-panel"><div className="panel-heading"><div><span className="eyebrow">CLASSIFICATION MIX</span><h2>Across saved claims</h2></div><ShieldCheck size={18} /></div><div className="mix-list">{[["Supported", totals.supported, "supported"], ["Contradicted", totals.contradicted, "contradicted"], ["Unverifiable", totals.unverifiable, "unverifiable"]].map(([label, count, tone]) => <div className="mix-row" key={tone}><div><span><i className={`legend-dot ${tone}`} />{label}</span><b>{count}</b></div><div className="mix-track"><span className={`mix-fill ${tone}`} style={{ width: `${totals.claims ? (count / totals.claims) * 100 : 0}%` }} /></div></div>)}</div><p className="chart-footnote">Percentages are derived from the classifications returned by your backend.</p></section></div>
-        <section className="panel recent-panel"><div className="panel-heading"><div><span className="eyebrow">RECENT REPORTS</span><h2>Continue where you left off.</h2></div><button className="text-link" type="button" onClick={() => onNavigate("history")}>View history <ArrowRight size={15} /></button></div><div className="recent-list">{sessions.slice(0, 3).map((session) => <HistoryRow key={session.id} session={session} onOpen={onOpen} />)}</div></section>
+      <div className="page-heading compact-heading"><div><div className="eyebrow">VERI-CLAIM / OVERVIEW</div><h1>Verification dashboard</h1><p>Review completed checks and continue your analysis. Metrics reflect reports saved in this browser.</p></div><button className="button-primary" type="button" onClick={() => onNavigate("verify")}><ShieldCheck size={15} /> New verification</button></div>
+      {!sessions.length ? <div className="empty-state dashboard-empty"><div className="empty-state-icon"><Database size={21} /></div><h3>No verification activity yet</h3><p>Run your first check to see claim totals, classifications, and recent reports here.</p><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>Create verification <ArrowRight size={15} /></button></div> : <>
+        <div className="metric-grid"><MetricCard label="Saved sessions" value={totals.sessions} detail="Stored in this browser" icon={History} /><MetricCard label="Claims analyzed" value={totals.claims} detail="Across completed reports" icon={MessageSquareText} /><MetricCard label="Supported" value={totals.supported} detail="Backend classifications" icon={ShieldCheck} /><MetricCard label="Average duration" value={`${averageDuration}${averageDuration === "—" ? "" : " s"}`} detail="For sessions with timing data" icon={Clock3} /></div>
+        <div className="dashboard-grid"><section className="panel verdict-panel"><div className="panel-heading"><div><span className="eyebrow">CLASSIFICATION SUMMARY</span><h2>Claim outcomes</h2></div></div><div className="mix-list">{[["Supported", totals.supported, "supported"], ["Contradicted", totals.contradicted, "contradicted"], ["Unverifiable", totals.unverifiable, "unverifiable"]].map(([label, count, tone]) => <div className="mix-row" key={tone}><div><span><i className={`legend-dot ${tone}`} />{label}</span><b>{count}</b></div><div className="mix-track"><span className={`mix-fill ${tone}`} style={{ width: `${totals.claims ? (count / totals.claims) * 100 : 0}%` }} /></div></div>)}</div><p className="chart-footnote">Counts are aggregated from the classifications in your saved reports.</p></section>
+          <section className="panel recent-panel"><div className="panel-heading"><div><span className="eyebrow">RECENT REPORTS</span><h2>Latest activity</h2></div><button className="text-link" type="button" onClick={() => onNavigate("history")}>View all <ArrowRight size={14} /></button></div><div className="recent-list">{sessions.slice(0, 4).map((session) => <HistoryRow key={session.id} session={session} onOpen={onOpen} />)}</div></section></div>
       </>}
     </section>
   );
 }
 
+function AnalyticsView({ sessions, onNavigate }) {
+  const stats = useMemo(() => {
+    const result = { claims: 0, supported: 0, contradicted: 0, unverifiable: 0, domains: new Map(), duration: 0, durationCount: 0 };
+    sessions.forEach((session) => {
+      const summary = session.summary || {};
+      result.claims += safeCount(summary.total_claims ?? session.decisions.length);
+      result.supported += safeCount(summary.supported);
+      result.contradicted += safeCount(summary.contradicted);
+      result.unverifiable += safeCount(summary.unverifiable);
+      const duration = Number(session.result?.metadata?.execution_time_seconds);
+      if (Number.isFinite(duration) && duration >= 0) {
+        result.duration += duration;
+        result.durationCount += 1;
+      }
+      session.decisions.forEach((claim) => {
+        const groups = claim.evidence_details || {};
+        ["supporting", "contradicting", "neutral"].forEach((group) => {
+          asObjectList(groups[group]).forEach((item) => {
+            let domain = item.domain;
+            if (!domain && item.url) {
+              try { domain = new URL(item.url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
+            }
+            if (domain) result.domains.set(domain, (result.domains.get(domain) || 0) + 1);
+          });
+        });
+      });
+    });
+    return result;
+  }, [sessions]);
+  const sources = [...stats.domains.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxSourceCount = Math.max(1, ...sources.map(([, count]) => count));
+  const classifications = [["Supported", stats.supported, "supported"], ["Contradicted", stats.contradicted, "contradicted"], ["Unverifiable", stats.unverifiable, "unverifiable"]];
+  return <section className="content-shell interior-page">
+    <div className="page-heading compact-heading"><div><div className="eyebrow">LOCAL REPORT ANALYTICS</div><h1>Analytics</h1><p>Aggregate view of the completed reports stored in this browser. No data is fabricated.</p></div><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>New verification <ArrowRight size={15} /></button></div>
+    {!sessions.length ? <div className="empty-state"><BarChart3 size={28} /><h3>Analytics will appear after your first report.</h3><p>Complete a verification to populate these charts with returned claim and source data.</p><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>Start a verification <ArrowRight size={14} /></button></div> : <>
+      <div className="analytics-summary"><div><span>Claims analyzed</span><strong>{stats.claims}</strong></div><div><span>Saved sessions</span><strong>{sessions.length}</strong></div><div><span>Mean run time</span><strong>{stats.durationCount ? `${(stats.duration / stats.durationCount).toFixed(1)} s` : "—"}</strong></div></div>
+      <div className="analytics-grid"><section className="panel"><div className="panel-heading"><div><span className="eyebrow">CLASSIFICATIONS</span><h2>Outcome distribution</h2></div></div><div className="analytics-bars">{classifications.map(([label, count, tone]) => <div className="analytics-bar-row" key={tone}><div><span><i className={`legend-dot ${tone}`} />{label}</span><strong>{count}</strong></div><div className="mix-track"><span className={`mix-fill ${tone}`} style={{ width: `${stats.claims ? (count / stats.claims) * 100 : 0}%` }} /></div></div>)}</div><p className="chart-footnote">Counts are derived from saved report decisions.</p></section>
+        <section className="panel"><div className="panel-heading"><div><span className="eyebrow">EVIDENCE PROVENANCE</span><h2>Most referenced domains</h2></div></div>{sources.length ? <div className="source-analytics">{sources.map(([domain, count]) => <div className="source-analytics-row" key={domain}><span>{domain}</span><div className="mix-track"><span style={{ width: `${(count / maxSourceCount) * 100}%` }} /></div><strong>{count}</strong></div>)}</div> : <p className="analytics-no-sources">No source domains were included in these reports.</p>}<p className="chart-footnote">Counts reflect evidence passages, not unique source credibility.</p></section></div>
+    </>}
+  </section>;
+}
+
 function HistoryRow({ session, onOpen, onDelete }) {
   const summary = session.summary || {};
   const date = formatDate(session.result?.metadata?.completed_at || session.createdAt);
-  return <article className="history-row"><div className="history-row-icon"><FileText size={18} /></div><button className="history-row-main" type="button" onClick={() => onOpen(session)}><strong>{session.title || "Verification report"}</strong><span>{date} <i>·</i> {safeCount(summary.total_claims ?? session.decisions.length)} claims</span></button><div className="history-counts"><span className="count-supported">{safeCount(summary.supported)} supported</span><span className="count-contradicted">{safeCount(summary.contradicted)} contradicted</span><span className="count-unverifiable">{safeCount(summary.unverifiable)} unverifiable</span></div><button className="history-open" type="button" onClick={() => onOpen(session)}>Open <ArrowRight size={14} /></button>{onDelete && <IconButton label={`Delete ${session.title}`} className="history-delete" onClick={() => onDelete(session.id)}><Trash2 size={15} /></IconButton>}</article>;
+  return <article className="history-row"><div className="history-row-icon"><FileText size={16} /></div><button className="history-row-main" type="button" onClick={() => onOpen(session)}><strong>{session.title || "Verification report"}</strong><span>{date} <i>·</i> {safeCount(summary.total_claims ?? session.decisions.length)} claims</span></button><div className="history-counts"><span className="count-supported">{safeCount(summary.supported)} supported</span><span className="count-contradicted">{safeCount(summary.contradicted)} contradicted</span><span className="count-unverifiable">{safeCount(summary.unverifiable)} unverifiable</span></div><span className="history-status">Completed</span><button className="history-open" type="button" onClick={() => onOpen(session)}>View report <ArrowRight size={14} /></button>{onDelete && <IconButton label={`Delete ${session.title}`} className="history-delete" onClick={() => onDelete(session.id)}><Trash2 size={15} /></IconButton>}</article>;
 }
 
 function HistoryView({ sessions, onOpen, onDelete, onNavigate }) {
   return <section className="content-shell interior-page">
-    <div className="page-heading compact-heading"><div><div className="eyebrow">LOCAL REPORT ARCHIVE</div><h1>Every check,<br /><span>within reach.</span></h1><p>Reports are saved in this browser only. They are not synced to a server.</p></div><span className="history-count-badge"><History size={15} /> {sessions.length} / {MAX_HISTORY} saved</span></div>
+    <div className="page-heading compact-heading"><div><div className="eyebrow">LOCAL REPORT ARCHIVE</div><h1>Verification history</h1><p>Saved reports are stored in this browser and are not synced to a server.</p></div><span className="history-count-badge"><History size={15} /> {sessions.length} / {MAX_HISTORY} saved</span></div>
     {sessions.length ? <div className="history-list">{sessions.map((session) => <HistoryRow key={session.id} session={session} onOpen={onOpen} onDelete={onDelete} />)}</div> : <div className="empty-state"><History size={29} /><h3>No saved reports yet.</h3><p>Complete a verification and it will appear here for this browser.</p><button className="button-primary" type="button" onClick={() => onNavigate("verify")}>Verify some text <ArrowRight size={15} /></button></div>}
     <div className="privacy-note"><ShieldCheck size={16} /><span>Browser-local history can include submitted text and evidence returned by your backend. Clear a report here to remove its saved copy.</span></div>
   </section>;
@@ -275,7 +268,7 @@ function AboutView({ onNavigate }) {
 }
 
 function AppContent() {
-  const [active, setActive] = useState("home");
+  const [active, setActive] = useState("dashboard");
   const [input, setInput] = useState("");
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -408,15 +401,14 @@ function AppContent() {
     <div className="app-shell">
       <SiteNav active={active} onNavigate={navigate} />
       <main>
-        {active === "home" && <HeroSection onNavigate={navigate} />}
         {active === "verify" && <VerificationWorkspace input={input} setInput={(value) => { setInput(value); if (error) setError(""); }} onSubmit={verifyText} loading={loading} error={error} onFile={handleFile} results={results} onExport={() => exportJson()} onExportCsv={() => exportCsv()} onClear={() => setError("")} />}
         {active === "dashboard" && <DashboardView sessions={sessions} onNavigate={navigate} onOpen={openSession} />}
         {active === "history" && <HistoryView sessions={sessions} onOpen={openSession} onDelete={deleteSession} onNavigate={navigate} />}
+        {active === "analytics" && <AnalyticsView sessions={sessions} onNavigate={navigate} />}
         {active === "about" && <AboutView onNavigate={navigate} />}
       </main>
-      <footer className="site-footer"><button className="footer-brand" type="button" onClick={() => navigate("home")}><ShieldCheck size={17} /> VERI·CLAIM</button><span>Evidence first. Certainty, earned.</span><span className="footer-version">VERI-CLAIM-AI 2.0</span></footer>
+      <footer className="site-footer"><button className="footer-brand" type="button" onClick={() => navigate("dashboard")}><ShieldCheck size={17} /> VERI·CLAIM</button><span>Evidence first. Certainty, earned.</span><span className="footer-version">VERI-CLAIM-AI 2.0</span></footer>
       {toast && <div className="toast-message" role="status"><Check size={16} /><span>{toast}</span><IconButton label="Dismiss notification" onClick={() => setToast("")}><X size={14} /></IconButton></div>}
-      <button className="scroll-top" type="button" aria-label="Back to top" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><ChevronDown size={16} /></button>
     </div>
   );
 }

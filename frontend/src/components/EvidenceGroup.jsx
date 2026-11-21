@@ -40,13 +40,20 @@ export default function EvidenceGroup({ title, items, tone = "neutral" }) {
           <div className="evidence-meta-row">
             {item.source_type && <span>{item.source_type}</span>}
             {date && <span><CalendarDays size={12} />{String(date)}</span>}
-            {item.reliability_score != null && <span><ShieldCheck size={12} />Source {formatScore(item.reliability_score)}</span>}
-            {item.similarity_score != null && <span>Relevance {formatScore(item.similarity_score)}</span>}
-            {item.semantic_similarity_score != null && <span>Meaning {formatScore(item.semantic_similarity_score)}</span>}
-            {item.lexical_overlap_score != null && <span>Term match {formatScore(item.lexical_overlap_score)}</span>}
-            {item.nli_confidence != null && <span>NLI {formatScore(item.nli_confidence)}</span>}
+            {item.reliability_score != null && <span><ShieldCheck size={12} />Source reliability {formatScore(item.reliability_score)}</span>}
           </div>
-          {item.nli_label && <div className="nli-result"><span>Passage relationship</span><strong>{String(item.nli_label).toUpperCase()}</strong>{item.nli_probabilities && <small>{Object.entries(item.nli_probabilities).map(([label, score]) => `${label} ${formatScore(score)}`).join(" · ")}</small>}</div>}
+          {(item.similarity_score != null || item.semantic_similarity_score != null || item.lexical_overlap_score != null || item.nli_confidence != null || item.nli_label) && <details className="evidence-technical">
+            <summary>Technical signals</summary>
+            <div className="technical-signal-list">
+              {item.nli_label && <span><b>NLI relationship</b><strong>{String(item.nli_label).toUpperCase()}</strong></span>}
+              {item.nli_confidence != null && <span><b>NLI confidence</b><strong>{formatScore(item.nli_confidence)}</strong></span>}
+              {item.nli_probabilities && Object.entries(item.nli_probabilities).map(([label, score]) => <span key={label}><b>{label}</b><strong>{formatScore(score)}</strong></span>)}
+              {item.similarity_score != null && <span><b>Combined relevance</b><strong>{formatScore(item.similarity_score)}</strong></span>}
+              {item.semantic_similarity_score != null && <span><b>Semantic similarity</b><strong>{formatScore(item.semantic_similarity_score)}</strong></span>}
+              {item.lexical_overlap_score != null && <span><b>Lexical overlap</b><strong>{formatScore(item.lexical_overlap_score)}</strong></span>}
+            </div>
+            <small className="technical-note">Model confidence and relevance scores are not calibrated probabilities of truth.</small>
+          </details>}
           {url ? <a className="source-link" href={url} target="_blank" rel="noopener noreferrer"><span>Open original source</span><ExternalLink size={13} /><ArrowUpRight size={12} /></a> : <span className="source-unavailable">No source link supplied</span>}
         </article>;
       }) : <p className="no-evidence">No {title.toLowerCase()} passages returned.</p>}
