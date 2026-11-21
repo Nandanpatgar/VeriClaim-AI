@@ -1,5 +1,6 @@
 
 import pytest
+import decision_engine
 
 from decision_engine import (
     decide_claim,
@@ -74,6 +75,28 @@ def test_supported_claim():
     assert result["decision"] == "SUPPORTED"
 
 
+def test_evidence_report_preserves_ranking_and_retrieval_provenance():
+    details = decision_engine.prepare_evidence_details([{
+        "evidence_id": 1,
+        "source": "Wikipedia",
+        "retrieval_provider": "Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Example",
+        "evidence_text": "A verifiable evidence passage.",
+        "nli_label": "entailment",
+        "similarity_score": 0.82,
+        "semantic_similarity_score": 0.9,
+        "lexical_overlap_score": 0.5,
+        "published_date": "2025-01-02",
+    }])
+
+    evidence = details["supporting"][0]
+    assert evidence["semantic_similarity_score"] == 0.9
+    assert evidence["lexical_overlap_score"] == 0.5
+    assert evidence["retrieval_provider"] == "Wikipedia"
+    assert evidence["published_date"] == "2025-01-02"
+    assert evidence["nli_label"] == "entailment"
+
+
 # ============================================================
 # TEST 2: CONTRADICTED CLAIM
 # ============================================================
@@ -107,7 +130,7 @@ def test_contradicted_claim():
 # TEST 3: SINGLE-SOURCE CLAIM
 # ============================================================
 
-def test_single_source_claim_supported():
+def test_single_independent_source_follows_configured_requirement():
 
     evidence = [
 
@@ -121,7 +144,12 @@ def test_single_source_claim_supported():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "SUPPORTED"
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
 
     assert (
         result["evidence_summary"][
@@ -216,7 +244,7 @@ def test_low_similarity_evidence():
 # TEST 7: SAME DOMAIN EVIDENCE
 # ============================================================
 
-def test_same_domain_evidence():
+def test_same_domain_evidence_counts_as_one_independent_source():
 
     evidence = [
 
@@ -228,13 +256,35 @@ def test_same_domain_evidence():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "SUPPORTED"
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
 
     assert (
         result["evidence_summary"][
             "independent_supporting_sources"
         ] == 1
     )
+
+
+def test_publisher_subdomains_count_as_one_source():
+    evidence = [
+        make_evidence(1, "en.wikipedia.org", "entailment"),
+        make_evidence(2, "www.wikipedia.org", "entailment"),
+    ]
+
+    result = decide_claim(make_claim(evidence))
+
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
+    assert result["evidence_summary"]["independent_supporting_sources"] == 1
 
 
 # ============================================================
@@ -406,3 +456,18 @@ def test_evidence_text_preserved():
     assert len(
         result["evidence_details"]["supporting"]
     ) == 2
+
+
+def test_filtered_passages_are_not_presented_as_verdict_evidence():
+    evidence = [
+        make_evidence(1, "source1.com", "entailment", similarity=0.20),
+        make_evidence(2, "source2.com", "entailment"),
+        make_evidence(3, "source3.com", "entailment"),
+    ]
+
+    result = decide_claim(make_claim(evidence))
+
+    assert result["decision"] == "SUPPORTED"
+    assert len(result["evidence_details"]["supporting"]) == 2
+    assert len(result["excluded_evidence_details"]["supporting"]) == 1
+    assert result["evidence_summary"]["filtered_evidence_count"] == 1

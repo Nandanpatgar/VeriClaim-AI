@@ -13,6 +13,7 @@ Responsibilities:
 """
 
 import re
+import ipaddress
 from urllib.parse import urlparse
 
 
@@ -36,6 +37,19 @@ SOURCE_WEIGHTS = {
 
 HTTPS_BONUS = 0.02
 
+# Common multi-label public suffixes. This keeps subdomains of the same
+# publisher (for example, en.wikipedia.org and www.wikipedia.org) together.
+# It is intentionally conservative and is not a replacement for the Public
+# Suffix List.
+MULTI_LABEL_SUFFIXES = {
+    "ac.in", "co.in", "gov.in", "org.in", "edu.in",
+    "ac.uk", "co.uk", "gov.uk", "org.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au",
+    "co.nz", "org.nz", "govt.nz", "ac.nz",
+    "co.jp", "ac.jp", "go.jp", "or.jp",
+    "com.br", "com.cn", "com.mx", "com.sg", "co.za",
+}
+
 
 # ============================================================
 # DOMAIN EXTRACTION
@@ -48,7 +62,7 @@ def get_source_domain(url):
     Examples:
         https://www.bbc.com/news -> bbc.com
         https://en.wikipedia.org/wiki/example
-            -> en.wikipedia.org
+            -> wikipedia.org
     """
 
     if not isinstance(url, str) or not url.strip():
@@ -72,6 +86,20 @@ def get_source_domain(url):
             domain = domain.split(":")[0]
 
         domain = domain.removeprefix("www.")
+
+        try:
+            ipaddress.ip_address(domain)
+            return domain
+        except ValueError:
+            pass
+
+        domain = domain.rstrip(".")
+        labels = domain.split(".")
+        if len(labels) > 2:
+            suffix = ".".join(labels[-2:])
+            if suffix in MULTI_LABEL_SUFFIXES:
+                return ".".join(labels[-3:])
+            return ".".join(labels[-2:])
 
         return domain.rstrip(".")
 

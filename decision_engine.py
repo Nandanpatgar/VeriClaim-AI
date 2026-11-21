@@ -16,7 +16,6 @@ Integrates:
 """
 
 import math
-from urllib.parse import urlparse
 
 from source_reliability import (
     evaluate_single_source,
@@ -41,7 +40,7 @@ MIN_SUPPORTING_EVIDENCE = 1
 
 MIN_CONTRADICTING_EVIDENCE = 1
 
-# At least one independent source is required
+# Require independent corroboration before assigning a definitive verdict.
 MIN_INDEPENDENT_SOURCES = 1
 # ============================================================
 # SOURCE DOMAIN EXTRACTION
@@ -56,31 +55,8 @@ def get_source_domain(evidence):
         -> wikipedia.org
     """
 
-    if isinstance(evidence, dict):
-        url = evidence.get("url", "")
-    else:
-        url = evidence
-
-    if not isinstance(url, str) or not url.strip():
-        return None
-
-    try:
-        parsed = urlparse(url.strip())
-
-        domain = parsed.hostname
-
-        if not domain:
-            return None
-
-        domain = domain.lower().rstrip(".")
-
-        if domain.startswith("www."):
-            domain = domain[4:]
-
-        return domain or None
-
-    except (ValueError, AttributeError):
-        return None
+    url = evidence.get("url", "") if isinstance(evidence, dict) else evidence
+    return reliability_get_source_domain(url) or None
 
 
 # ============================================================
@@ -423,6 +399,22 @@ def prepare_evidence_details(evidence):
                 "similarity_score"
             ),
 
+            "semantic_similarity_score": enriched.get(
+                "semantic_similarity_score"
+            ),
+
+            "lexical_overlap_score": enriched.get(
+                "lexical_overlap_score"
+            ),
+
+            "retrieval_provider": enriched.get(
+                "retrieval_provider"
+            ),
+
+            "published_date": enriched.get(
+                "published_date"
+            ),
+
             "nli_confidence": enriched.get(
                 "nli_confidence"
             ),
@@ -430,7 +422,9 @@ def prepare_evidence_details(evidence):
             "nli_probabilities": enriched.get(
                 "nli_probabilities",
                 {}
-            )
+            ),
+
+            "nli_label": label
 
         }
 
@@ -657,6 +651,37 @@ def decide_claim(claim_data):
         strong_evidence
     )
 
+    selected_source_ids = {
+        item.get("evidence_id")
+        for item in strong_evidence
+        if item.get("evidence_id") is not None
+    }
+    excluded_evidence = [
+        item for item in evidence
+        if isinstance(item, dict)
+        and item.get("evidence_id") not in selected_source_ids
+    ]
+
+    if supporting and contradicting:
+        decision_reason = (
+            "Relevant evidence supports and contradicts this claim, "
+            "so the available sources do not establish one conclusion."
+        )
+    elif decision == "UNVERIFIABLE" and (supporting or contradicting):
+        available_sources = max(support_sources, contradiction_sources)
+        decision_reason = (
+            "Some relevant evidence was found, but it is supported by "
+            f"only {available_sources} independent source(s); at least "
+            f"{MIN_INDEPENDENT_SOURCES} are required for a definitive verdict."
+        )
+    elif decision == "UNVERIFIABLE":
+        decision_reason = (
+            "No evidence passed the relevance, NLI-confidence, and source "
+            "reliability checks required for a definitive verdict."
+        )
+    else:
+        decision_reason = generate_decision_explanation(decision)
+
     # --------------------------------------------------------
     # FINAL RESULT
     # --------------------------------------------------------
@@ -667,13 +692,22 @@ def decide_claim(claim_data):
 
         "claim": claim,
 
+        "source_text": claim_data.get("source_text", ""),
+
+        "source_start": claim_data.get("source_start"),
+
+        "source_end": claim_data.get("source_end"),
+
         "decision": decision,
+
+        "retrieval_status": claim_data.get(
+            "retrieval_status",
+            {"state": "unknown", "warnings": []}
+        ),
 
         "evidence_confidence": evidence_confidence,
 
-        "decision_reason": generate_decision_explanation(
-            decision
-        ),
+        "decision_reason": decision_reason,
 
         "evidence_summary": {
 
@@ -718,7 +752,11 @@ def decide_claim(claim_data):
         "contradicting_evidence_ids": contradicting_ids,
 
         "evidence_details": prepare_evidence_details(
-            evidence
+            strong_evidence
+        ),
+
+        "excluded_evidence_details": prepare_evidence_details(
+            excluded_evidence
         )
 
     }

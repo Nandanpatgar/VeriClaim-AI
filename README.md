@@ -111,6 +111,7 @@ The retrieved passages are associated with their source information and claim co
 
 Retrieved passages are evaluated to identify evidence that is semantically relevant to the corresponding claim.
 
+Sentence embeddings are generated using a transformer-based embedding model. The ranker blends cosine similarity (80%) with token-overlap F1 (20%) so paraphrases remain visible while exact names and numbers influence passage ordering. Both component scores are included in the result; the combined relevance score is not a probability of truth.
 Sentence embeddings are generated using a transformer-based embedding model, and cosine similarity is used to estimate semantic relevance.
 
 **Technologies:** Sentence Transformers, all-MiniLM-L6-v2, Cosine Similarity.
@@ -154,6 +155,24 @@ Each claim receives one of the following classifications:
 | SUPPORTED      | Available evidence provides support for the claim.                    |
 | CONTRADICTED   | Available evidence provides contradictory information.                |
 | UNVERIFIABLE   | Available evidence is insufficient to establish the claim's validity. |
+
+The decision policy uses a configurable minimum number of qualifying
+publisher domains before assigning `SUPPORTED` or `CONTRADICTED`.
+Repeated pages or subdomains from one publisher still count as one source.
+This policy is configurable in `decision_engine.py`; it is not a calibrated
+accuracy guarantee.
+Evidence that fails the relevance, NLI-confidence, or source-reliability
+filters is kept separately from evidence used for the verdict.
+
+If all configured retrieval providers fail, the API returns a service error
+instead of reporting the claim as `UNVERIFIABLE`. When retrieval partially
+works, the response carries provider warnings so users can interpret results
+with the available coverage in mind. If Tavily is not configured, the report
+marks the search as partial and notes that only Wikipedia was queried.
+
+The displayed claim score is a heuristic combination of NLI confidence and
+source reliability. It is not a calibrated probability that the claim is
+correct and is not the system's measured accuracy.
 
 #### 7. Report Generation
 
@@ -209,6 +228,7 @@ VERI-CLAIM-AI/
 ├── nli_verifier.py
 ├── source_reliability.py
 ├── decision_engine.py
+├── evaluation.py
 │
 ├── tests/
 │   ├── test_input_validation.py
@@ -221,6 +241,10 @@ VERI-CLAIM-AI/
 │   │   ├── App.jsx
 │   │   ├── App.css
 │   │   └── main.jsx
+│   │   └── components/
+│   │       ├── ClaimCard.jsx
+│   │       ├── EvidenceGroup.jsx
+│   │       └── ErrorBoundary.jsx
 │   │
 │   ├── index.html
 │   └── package.json
@@ -306,6 +330,7 @@ Ensure the Ollama service is running before executing the claim extraction pipel
 From the project root, execute:
 
 ```bash
+python -m uvicorn backend_api:app --reload
 uvicorn backend_api:app --reload
 ```
 
@@ -349,6 +374,16 @@ The frontend will be available at:
 
 ```text
 http://localhost:5173/
+```
+
+For a frontend served from another origin, set `VERICLAIM_CORS_ORIGINS` on
+the backend to a comma-separated list of exact origins, and set
+`VITE_API_BASE_URL` before building/starting Vite if the API is not at
+`http://127.0.0.1:8000`. Example:
+
+```text
+VERICLAIM_CORS_ORIGINS=http://localhost:5173,https://vericlaim.example
+VITE_API_BASE_URL=https://api.vericlaim.example
 ```
 
 ---
@@ -443,6 +478,16 @@ python -m pytest tests/test_data_contracts.py -v
 
 Testing helps validate input handling, data contracts and individual verification components.
 
+### Labeled Evaluation
+
+`evaluation.py` computes accuracy on covered predictions, macro F1, per-class
+precision/recall/F1, false-positive and false-negative rates, a confusion
+matrix, and classification coverage from caller-supplied labeled records.
+`None` predictions are treated as abstentions and excluded from accuracy while
+reducing coverage. The repository does not include a curated ground-truth
+benchmark, so this tool does not imply or report a measured system accuracy
+until evaluated against an independently labeled dataset.
+
 ---
 
 ## 10. Key Features
@@ -450,6 +495,7 @@ Testing helps validate input handling, data contracts and individual verificatio
 - Claim-level hallucination detection.
 - Automated factual claim extraction.
 - Evidence retrieval from external knowledge sources.
+- Hybrid semantic and lexical evidence ranking.
 - Semantic evidence ranking.
 - Natural Language Inference-based verification.
 - Source reliability assessment.
@@ -457,6 +503,9 @@ Testing helps validate input handling, data contracts and individual verificatio
 - Explainable verification decisions.
 - FastAPI-based backend integration.
 - React-based web interface.
+- Responsive multi-view interface with claim-level evidence explorer.
+- Browser-local verification history and analytics based on completed reports.
+- Text-file input and JSON/CSV report exports.
 - Structured verification results.
 
 ---

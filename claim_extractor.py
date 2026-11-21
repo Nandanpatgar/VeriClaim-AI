@@ -193,6 +193,28 @@ def source_exists(source_text, original_response):
     return False
 
 
+def find_source_span(source_text, original_response):
+    """Return exact character offsets when source wording is present.
+
+    Whitespace between words may differ, but word order and punctuation are
+    preserved. Returns ``(None, None)`` when only normalized fuzzy matching
+    could validate the sentence.
+    """
+    if not isinstance(source_text, str) or not isinstance(original_response, str):
+        return None, None
+
+    words = source_text.split()
+    if not words:
+        return None, None
+
+    pattern = r"\s+".join(re.escape(word) for word in words)
+    match = re.search(pattern, original_response, flags=re.IGNORECASE)
+    if not match:
+        return None, None
+
+    return match.start(), match.end()
+
+
 # ==================================================
 # CLAIM VALIDATION
 # ==================================================
@@ -238,10 +260,17 @@ def validate_claims(raw_claims, original_response):
 
         seen_claims.add(normalized_claim)
 
+        source_start, source_end = find_source_span(
+            source_text,
+            original_response
+        )
+
         validated_claims.append({
             "claim_id": len(validated_claims) + 1,
             "claim": claim,
-            "source_text": source_text
+            "source_text": source_text,
+            "source_start": source_start,
+            "source_end": source_end
         })
 
     return validated_claims
@@ -454,36 +483,31 @@ def extract_claims(response):
             "claims": validated_claims
         }
 
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.ConnectionError as error:
+        raise RuntimeError(
+            "Cannot connect to Ollama at http://localhost:11434. "
+            "Make sure Ollama is running and the llama3.2 model is available."
+        ) from error
 
-        print("\nERROR: Cannot connect to Ollama.")
-        print("Make sure Ollama is running.")
-
-        return None
-
-    except requests.exceptions.Timeout:
-
-        print("\nERROR: Ollama request timed out.")
-
-        return None
+    except requests.exceptions.Timeout as error:
+        raise RuntimeError(
+            "Ollama did not respond before the claim extraction timeout."
+        ) from error
 
     except requests.exceptions.RequestException as error:
-
-        print(f"\nOLLAMA API ERROR: {error}")
-
-        return None
+        raise RuntimeError(
+            f"Ollama request failed: {error}"
+        ) from error
 
     except (ValueError, KeyError, TypeError) as error:
-
-        print(f"\nCLAIM EXTRACTION ERROR: {error}")
-
-        return None
+        raise RuntimeError(
+            f"Claim extraction returned invalid output: {error}"
+        ) from error
 
     except Exception as error:
-
-        print(f"\nUNEXPECTED ERROR: {error}")
-
-        return None
+        raise RuntimeError(
+            f"Unexpected claim extraction failure: {error}"
+        ) from error
 
 
 # ==================================================

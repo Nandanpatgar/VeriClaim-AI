@@ -539,6 +539,18 @@ def verify_claim_evidence(
                 item.get("score", 0)
             ),
 
+            "semantic_similarity_score": item.get(
+                "semantic_similarity_score"
+            ),
+
+            "lexical_overlap_score": item.get(
+                "lexical_overlap_score"
+            ),
+
+            "retrieval_provider": item.get("retrieval_provider"),
+
+            "published_date": item.get("published_date"),
+
             "nli_label": label,
 
             "nli_confidence": confidence,
@@ -630,6 +642,15 @@ def verify_claims(
             "source_text": claim_data.get(
                 "source_text",
                 claim
+            ),
+
+            "source_start": claim_data.get("source_start"),
+
+            "source_end": claim_data.get("source_end"),
+
+            "retrieval_status": claim_data.get(
+                "retrieval_status",
+                {"state": "unknown", "warnings": []}
             ),
 
             "verification_results": results,

@@ -3,6 +3,7 @@ import pytest
 
 from evidence_ranker import (
     calculate_similarity,
+    calculate_lexical_overlap,
     rank_claim_evidence,
     rank_evidence
 )
@@ -152,6 +153,37 @@ def test_top_k_selection():
     assert len(result) == 2
 
 
+def test_lexical_overlap_rewards_exact_terms():
+    exact = calculate_lexical_overlap(
+        "Einstein published the 1905 paper",
+        "Einstein published the 1905 paper on relativity"
+    )
+    paraphrase = calculate_lexical_overlap(
+        "Einstein published the 1905 paper",
+        "A physicist released a famous work in the early twentieth century"
+    )
+
+    assert exact > paraphrase
+
+
+def test_hybrid_ranking_keeps_semantic_and_lexical_provenance():
+    claim = "Einstein studied physics in 1905."
+    evidence = [
+        {"content": "Einstein wrote about relativity in 1905."},
+        {"content": "Einstein studied physics in 1905."},
+    ]
+
+    ranked = rank_claim_evidence(claim, evidence, model=MockEmbeddingModel())
+
+    assert ranked[0]["content"] == claim
+    assert ranked[0]["semantic_similarity_score"] == pytest.approx(1.0)
+    assert ranked[0]["lexical_overlap_score"] > ranked[1]["lexical_overlap_score"]
+    assert ranked[0]["similarity_score"] == pytest.approx(
+        0.8 * ranked[0]["semantic_similarity_score"]
+        + 0.2 * ranked[0]["lexical_overlap_score"]
+    )
+
+
 # ==================================================
 # COMPLETE PIPELINE TEST
 # ==================================================
@@ -166,6 +198,7 @@ def test_rank_evidence_pipeline():
                 "claim_id": 1,
                 "claim": "Albert Einstein developed relativity.",
                 "source_text": "Einstein developed relativity.",
+                "retrieval_status": {"state": "partial", "warnings": ["Tavily unavailable"]},
                 "evidence": [
                     {
                         "source": "Wikipedia",
@@ -189,6 +222,8 @@ def test_rank_evidence_pipeline():
     )
 
     assert len(result["claims"]) == 1
+
+    assert result["claims"][0]["retrieval_status"]["state"] == "partial"
 
     ranked = result["claims"][0]["ranked_evidence"]
 

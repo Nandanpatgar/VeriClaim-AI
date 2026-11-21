@@ -120,6 +120,18 @@ def test_invalid_source_text_rejected():
     assert len(result) == 0
 
 
+def test_ollama_connection_failure_is_reported(monkeypatch):
+    import requests
+
+    def fail_request(*args, **kwargs):
+        raise requests.ConnectionError("connection refused")
+
+    monkeypatch.setattr("claim_extractor.requests.post", fail_request)
+
+    with pytest.raises(RuntimeError, match="Cannot connect to Ollama"):
+        extract_claims("The Earth orbits the Sun.")
+
+
 def test_duplicate_claim_removal():
 
     original = "India gained independence in 1947."
@@ -214,6 +226,7 @@ def test_source_traceability():
 
     for item in result:
         assert normalize_text(item["source_text"]) in normalize_text(original)
+        assert original[item["source_start"]:item["source_end"]] == item["source_text"]
 
 
 # ==================================================
