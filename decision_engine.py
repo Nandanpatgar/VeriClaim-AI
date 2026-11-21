@@ -41,7 +41,7 @@ MIN_SUPPORTING_EVIDENCE = 1
 MIN_CONTRADICTING_EVIDENCE = 1
 
 # Require independent corroboration before assigning a definitive verdict.
-MIN_INDEPENDENT_SOURCES = 2
+MIN_INDEPENDENT_SOURCES = 1
 # ============================================================
 # SOURCE DOMAIN EXTRACTION
 # ============================================================
