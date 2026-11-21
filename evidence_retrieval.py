@@ -75,7 +75,7 @@ def generate_search_queries(claim):
     queries = [claim]
 
     cleaned = re.sub(
-        r"\b(is|are|was|were|the|a|an)\b",
+        r"\b(is|are|was|were|has|have|had|the|a|an|of|in|on|at|by|from|with|and|or|to|for|this|that)\b",
         " ",
         claim,
         flags=re.IGNORECASE
@@ -83,10 +83,10 @@ def generate_search_queries(claim):
 
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    if cleaned and cleaned not in queries:
+    if cleaned and cleaned.casefold() != claim.casefold():
         queries.append(cleaned)
 
-    return queries
+    return queries[:2]
 
 
 # ============================================================
@@ -424,29 +424,48 @@ def retrieve_evidence_for_claim(claim, api_key=None, include_status=False):
     provider_errors = []
     wikipedia_evidence = []
     tavily_evidence = []
+    query_plan = generate_search_queries(claim)
+    wikipedia_queries = []
+    tavily_queries = []
+    wikipedia_failed = False
+    tavily_failed = False
 
-    try:
-        wikipedia_evidence = retrieve_wikipedia_evidence(claim)
-    except EvidenceRetrievalError as error:
-        provider_errors.append(str(error))
+    for query in query_plan:
+        wikipedia_queries.append(query)
+        try:
+            wikipedia_evidence = retrieve_wikipedia_evidence(query)
+        except EvidenceRetrievalError as error:
+            wikipedia_failed = True
+            provider_errors.append(str(error))
+            break
+        if wikipedia_evidence:
+            break
 
     # Maintain compatibility with one-argument test mocks
     # and existing callers when no explicit API key is supplied.
     key = api_key if api_key is not None else TAVILY_API_KEY
     tavily_enabled = bool(key)
     if tavily_enabled:
-        try:
-            if api_key is None:
-                tavily_evidence = retrieve_tavily_evidence(claim)
-            else:
-                tavily_evidence = retrieve_tavily_evidence(
-                    claim,
-                    api_key=api_key
-                )
-        except EvidenceRetrievalError as error:
-            provider_errors.append(str(error))
+        for query in query_plan:
+            tavily_queries.append(query)
+            try:
+                if api_key is None:
+                    tavily_evidence = retrieve_tavily_evidence(query)
+                else:
+                    tavily_evidence = retrieve_tavily_evidence(
+                        query,
+                        api_key=api_key
+                    )
+            except EvidenceRetrievalError as error:
+                tavily_failed = True
+                provider_errors.append(str(error))
+                break
+            if tavily_evidence:
+                break
 
-    successful_providers = 1 + int(tavily_enabled) - len(provider_errors)
+    successful_providers = int(not wikipedia_failed) + int(
+        tavily_enabled and not tavily_failed
+    )
     if successful_providers <= 0:
         raise EvidenceRetrievalError(
             "All configured evidence providers failed: "
@@ -478,11 +497,16 @@ def retrieve_evidence_for_claim(claim, api_key=None, include_status=False):
     status = {
         "state": "partial" if warnings else "complete",
         "warnings": warnings,
-        "wikipedia": "failed" if any("Wikipedia retrieval" in e or "Wikipedia returned" in e for e in provider_errors) else "available",
+        "wikipedia": "failed" if wikipedia_failed else "available",
         "tavily": (
-            "failed" if any("Tavily retrieval" in e or "Tavily returned" in e for e in provider_errors)
+            "failed" if tavily_failed
             else "available" if tavily_enabled else "disabled"
         ),
+        "query_plan": query_plan,
+        "queries_attempted": {
+            "wikipedia": wikipedia_queries,
+            "tavily": tavily_queries
+        },
     }
     return (unique_evidence, status) if include_status else unique_evidence
 

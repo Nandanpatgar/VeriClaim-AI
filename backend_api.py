@@ -9,6 +9,7 @@ Endpoints:
     POST /api/verify
 """
 
+import os
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
@@ -36,15 +37,21 @@ app = FastAPI(
 # CORS CONFIGURATION
 # ============================================================
 
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "VERICLAIM_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_origins=frontend_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Accept"]
 )
 
 

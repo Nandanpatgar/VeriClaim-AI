@@ -1,5 +1,6 @@
 
 import pytest
+import decision_engine
 
 from decision_engine import (
     decide_claim,
@@ -107,7 +108,7 @@ def test_contradicted_claim():
 # TEST 3: SINGLE-SOURCE CLAIM
 # ============================================================
 
-def test_single_source_is_insufficient_for_definitive_verdict():
+def test_single_independent_source_follows_configured_requirement():
 
     evidence = [
 
@@ -121,7 +122,12 @@ def test_single_source_is_insufficient_for_definitive_verdict():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "UNVERIFIABLE"
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
 
     assert (
         result["evidence_summary"][
@@ -216,7 +222,7 @@ def test_low_similarity_evidence():
 # TEST 7: SAME DOMAIN EVIDENCE
 # ============================================================
 
-def test_same_domain_evidence_is_not_independent_corroboration():
+def test_same_domain_evidence_counts_as_one_independent_source():
 
     evidence = [
 
@@ -228,7 +234,12 @@ def test_same_domain_evidence_is_not_independent_corroboration():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "UNVERIFIABLE"
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
 
     assert (
         result["evidence_summary"][
@@ -245,7 +256,12 @@ def test_publisher_subdomains_count_as_one_source():
 
     result = decide_claim(make_claim(evidence))
 
-    assert result["decision"] == "UNVERIFIABLE"
+    expected = (
+        "SUPPORTED"
+        if decision_engine.MIN_INDEPENDENT_SOURCES <= 1
+        else "UNVERIFIABLE"
+    )
+    assert result["decision"] == expected
     assert result["evidence_summary"]["independent_supporting_sources"] == 1
 
 

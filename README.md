@@ -111,7 +111,7 @@ The retrieved passages are associated with their source information and claim co
 
 Retrieved passages are evaluated to identify evidence that is semantically relevant to the corresponding claim.
 
-Sentence embeddings are generated using a transformer-based embedding model, and cosine similarity is used to estimate semantic relevance.
+Sentence embeddings are generated using a transformer-based embedding model. The ranker blends cosine similarity (80%) with token-overlap F1 (20%) so paraphrases remain visible while exact names and numbers influence passage ordering. Both component scores are included in the result; the combined relevance score is not a probability of truth.
 
 **Technologies:** Sentence Transformers, all-MiniLM-L6-v2, Cosine Similarity.
 
@@ -155,10 +155,11 @@ Each claim receives one of the following classifications:
 | CONTRADICTED   | Available evidence provides contradictory information.                |
 | UNVERIFIABLE   | Available evidence is insufficient to establish the claim's validity. |
 
-The current decision policy requires qualifying evidence from at least two
-distinct publisher domains before assigning `SUPPORTED` or `CONTRADICTED`.
-Multiple subdomains are grouped under a common registrable-domain heuristic.
-This is a corroboration safeguard, not a calibrated accuracy guarantee.
+The decision policy uses a configurable minimum number of qualifying
+publisher domains before assigning `SUPPORTED` or `CONTRADICTED`.
+Repeated pages or subdomains from one publisher still count as one source.
+This policy is configurable in `decision_engine.py`; it is not a calibrated
+accuracy guarantee.
 Evidence that fails the relevance, NLI-confidence, or source-reliability
 filters is kept separately from evidence used for the verdict.
 
@@ -371,6 +372,16 @@ The frontend will be available at:
 
 ```text
 http://localhost:5173/
+```
+
+For a frontend served from another origin, set `VERICLAIM_CORS_ORIGINS` on
+the backend to a comma-separated list of exact origins, and set
+`VITE_API_BASE_URL` before building/starting Vite if the API is not at
+`http://127.0.0.1:8000`. Example:
+
+```text
+VERICLAIM_CORS_ORIGINS=http://localhost:5173,https://vericlaim.example
+VITE_API_BASE_URL=https://api.vericlaim.example
 ```
 
 ---

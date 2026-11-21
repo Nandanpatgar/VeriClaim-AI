@@ -229,6 +229,44 @@ def test_empty_claims():
     assert result == {"claims": []}
 
 
+def test_query_plan_preserves_entities_and_numbers():
+    queries = er.generate_search_queries(
+        "Was Dr. Akshaya D Shetty appointed in 2024 at VCET Puttur?"
+    )
+
+    assert queries[0] == "Was Dr. Akshaya D Shetty appointed in 2024 at VCET Puttur?"
+    assert len(queries) == 2
+    assert "2024" in queries[1]
+    assert "Akshaya" in queries[1]
+    assert "VCET" in queries[1]
+
+
+def test_compact_query_is_used_only_after_empty_initial_search(monkeypatch):
+    queries = []
+    monkeypatch.setattr(er, "TAVILY_API_KEY", "")
+
+    def wikipedia(query):
+        queries.append(query)
+        if len(queries) == 1:
+            return []
+        return [{
+            "source": "Wikipedia",
+            "title": "Result",
+            "content": "A relevant passage.",
+            "url": "https://en.wikipedia.org/wiki/Result"
+        }]
+
+    monkeypatch.setattr(er, "retrieve_wikipedia_evidence", wikipedia)
+    evidence, status = er.retrieve_evidence_for_claim(
+        "Was the project founded in 2020?", include_status=True
+    )
+
+    assert len(evidence) == 1
+    assert queries == status["queries_attempted"]["wikipedia"]
+    assert len(queries) == 2
+    assert "2020" in queries[1]
+
+
 def test_partial_provider_failure_is_exposed(monkeypatch):
     def fail_wikipedia(claim):
         raise er.EvidenceRetrievalError("Wikipedia retrieval failed: offline")

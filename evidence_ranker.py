@@ -1,4 +1,5 @@
 
+import re
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
@@ -11,6 +12,11 @@ MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 TOP_K = 5
 EPSILON = 1e-10
+
+# Semantic similarity handles paraphrases; lexical overlap protects exact
+# names, dates, quantities, and technical terms from being lost in the mix.
+SEMANTIC_WEIGHT = 0.8
+LEXICAL_WEIGHT = 1.0 - SEMANTIC_WEIGHT
 
 _model = None
 
@@ -260,6 +266,24 @@ def generate_embeddings(texts, model):
     return embeddings
 
 
+def calculate_lexical_overlap(claim, evidence_text):
+    """Return a bounded token-overlap F1 score for exact term matching."""
+    tokenize = lambda text: re.findall(r"\b[\w]+\b", text.casefold())
+    claim_tokens = tokenize(claim)
+    evidence_tokens = tokenize(evidence_text)
+    if not claim_tokens or not evidence_tokens:
+        return 0.0
+
+    claim_set = set(claim_tokens)
+    evidence_set = set(evidence_tokens)
+    overlap = len(claim_set & evidence_set)
+    precision = overlap / len(evidence_set)
+    recall = overlap / len(claim_set)
+    if precision + recall == 0:
+        return 0.0
+    return (2 * precision * recall) / (precision + recall)
+
+
 # ============================================================
 # RANK EVIDENCE FOR ONE CLAIM
 # ============================================================
@@ -271,7 +295,7 @@ def rank_claim_evidence(
     top_k=TOP_K
 ):
     """
-    Rank evidence passages according to semantic similarity.
+    Rank evidence passages with a hybrid semantic and lexical score.
 
     Pipeline:
 
@@ -344,7 +368,19 @@ def rank_claim_evidence(
 
         ranked_evidence.append(ranked_item)
 
-    # Highest similarity first.
+    # Preserve the raw embedding score for inspection, and use a small
+    # lexical contribution to favor passages containing the claim's exact
+    # entities and numbers. Neither score is a truth probability.
+    for item in ranked_evidence:
+        semantic_score = item["similarity_score"]
+        lexical_score = calculate_lexical_overlap(claim, item["content"])
+        item["semantic_similarity_score"] = semantic_score
+        item["lexical_overlap_score"] = lexical_score
+        item["similarity_score"] = (
+            SEMANTIC_WEIGHT * semantic_score + LEXICAL_WEIGHT * lexical_score
+        )
+
+    # Highest hybrid relevance first.
     ranked_evidence.sort(
         key=lambda item: item["similarity_score"],
         reverse=True

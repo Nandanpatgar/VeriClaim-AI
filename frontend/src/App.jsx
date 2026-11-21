@@ -3,7 +3,8 @@ import ClaimCard from "./components/ClaimCard.jsx";
 import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000/api/verify";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+const API_URL = `${API_BASE_URL}/api/verify`;
 const MAX_LENGTH = 10000;
 
 function asObjectList(value) {

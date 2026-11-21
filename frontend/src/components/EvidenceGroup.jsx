@@ -25,6 +25,9 @@ export default function EvidenceGroup({ title, items }) {
           {item.evidence_text && <p>{item.evidence_text}</p>}
           <div className="source-meta">
             {item.reliability_score != null && <span>Reliability {formatScore(item.reliability_score)}</span>}
+            {item.similarity_score != null && <span>Relevance {formatScore(item.similarity_score)}</span>}
+            {item.semantic_similarity_score != null && <span>Semantic {formatScore(item.semantic_similarity_score)}</span>}
+            {item.lexical_overlap_score != null && <span>Term overlap {formatScore(item.lexical_overlap_score)}</span>}
             {item.nli_confidence != null && <span>NLI {formatScore(item.nli_confidence)}</span>}
             {item.nli_probabilities && typeof item.nli_probabilities === "object" && item.nli_probabilities.entailment != null && <span>NLI: {Object.entries(item.nli_probabilities).map(([label, score]) => `${label} ${formatScore(score)}`).join(" · ")}</span>}
           </div>
